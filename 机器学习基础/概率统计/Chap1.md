@@ -177,11 +177,11 @@ $$
 
 观察可以发现，分母为全概率公式，分子是分母中的某一项。
 
-![](Bayes.png)
+![](assets/Bayes.png)
 
 一道贝叶斯公式的典型例题：
 
-![](Bayes_sample.png)
+![](assets/Bayes_sample.png)
 
 > 设第一个是红球的概率为 $A$，取到第 $i$ 个盒子的概率为 $B_i$，然后用贝叶斯公式做
 

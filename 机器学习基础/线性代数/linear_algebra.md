@@ -160,7 +160,7 @@ $A^{-1}MA = \begin{bmatrix} 1 & 1 \\ -1 & 1 \end{bmatrix} \begin{bmatrix} 0 & -1
 
 - 如果$b$不在$A$的列空间中,则$Ax=b$无解。
 
-![](\assets\strangDiagram.png)
+![](assets/strangDiagram.png)
 
 - A的行空间与零空间是正交补的关系。所以 $rank(A^T) + nullity(A) = A$的列数。
 
