@@ -8,6 +8,9 @@
 - [对比学习与CLIP详解](对比学习与CLIP详解.md) — 对比学习范式、SimCLR、MoCo、CLIP、SigLIP
 - [DINO详解](DINO详解.md) — 自蒸馏、DINOv1/v2、视觉特征的涌现特性
 
+### 生成模型
+- [生成模型详解（VAE与Diffusion）](生成模型详解.md) — AE→VAE（ELBO、重参数化、KL解析解）、DDPM、Score Matching、DDIM、CFG、Latent Diffusion / Stable Diffusion
+
 ### 3D 视觉工程
 - [3D稀疏卷积](3D稀疏卷积.md) — Hash Map、Rulebook、Implicit GEMM，点云处理的核心工程实现
 
