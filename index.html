@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>AI 知识库</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/docsify-themeable@0/dist/css/theme-simple.css">
+  <style>
+    :root {
+      --base-font-size: 15px;
+      --theme-color: #3F51B5;
+      --sidebar-width: 260px;
+    }
+    .markdown-section table {
+      display: table;
+      width: 100%;
+    }
+    /* 支持 LaTeX 公式的基本样式 */
+    .katex { font-size: 1.1em; }
+  </style>
+  <link rel="stylesheet" href="docs/css/ai-sidebar.css">
+</head>
+<body>
+  <div id="app"></div>
+  <script>
+    window.$docsify = {
+      name: 'AI 知识库',
+      loadSidebar: '_sidebar.md',
+      subMaxLevel: 3,
+      search: {
+        placeholder: '搜索...',
+        noData: '没有找到结果',
+        depth: 6
+      },
+      auto2top: false,
+      relativePath: false,
+      requestHeaders: {
+        'cache-control': 'no-cache',
+      },
+      alias: {
+        '/.*/_sidebar.md': '/_sidebar.md'
+      }
+    }
+  </script>
+  <script>
+    // Docsify 插件：记住滚动位置 + 渲染完成后恢复
+    var scrollPlugin = function(hook) {
+      var KEY = 'docsify_scroll_pos';
+      var saving = false;
+
+      function savePos() {
+        var hash = location.hash || '#/';
+        try {
+          var data = JSON.parse(sessionStorage.getItem(KEY) || '{}');
+          data[hash] = window.scrollY;
+          sessionStorage.setItem(KEY, JSON.stringify(data));
+        } catch(e) {}
+      }
+
+      // doneEach: Docsify 每次渲染完页面后触发
+      hook.doneEach(function() {
+        var hash = location.hash || '#/';
+        try {
+          var data = JSON.parse(sessionStorage.getItem(KEY) || '{}');
+          var pos = data[hash];
+          if (pos > 0) {
+            // 等图片/公式渲染完再滚动
+            setTimeout(function() { window.scrollTo(0, pos); }, 100);
+            setTimeout(function() { window.scrollTo(0, pos); }, 500);
+          }
+        } catch(e) {}
+
+        // 开始监听滚动
+        if (!saving) {
+          saving = true;
+          var timer;
+          window.addEventListener('scroll', function() {
+            clearTimeout(timer);
+            timer = setTimeout(savePos, 200);
+          }, true);
+        }
+      });
+    };
+
+    window.$docsify = window.$docsify || {};
+    window.$docsify.plugins = (window.$docsify.plugins || []).concat(scrollPlugin);
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/docsify@4/lib/docsify.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/docsify@4/lib/plugins/search.min.js"></script>
+  <!-- 数学公式支持 -->
+  <script src="https://cdn.jsdelivr.net/npm/docsify-katex@1/dist/docsify-katex.min.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0/dist/katex.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/katex@0/dist/katex.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/katex@0/dist/contrib/auto-render.min.js"></script>
+
+  <!-- AI Sidebar -->
+  <div id="ai-sidebar" class="ai-sidebar">
+    <div id="ai-sidebar-resize" class="ai-sidebar-resize"></div>
+    <div class="ai-sidebar-header">
+      <span>AI Assistant</span>
+      <div>
+        <button id="ai-clear" title="Clear history">&#x1F5D1;</button>
+        <button id="ai-close">&times;</button>
+      </div>
+    </div>
+    <div id="ai-context"></div>
+    <div id="ai-messages"></div>
+    <div class="ai-sidebar-input">
+      <div class="ai-model-row">
+        <select id="ai-model">
+          <option value="claude-opus-4-6">Opus 4.6</option>
+          <option value="claude-sonnet-4-6">Sonnet 4.6</option>
+          <option value="claude-haiku-4-5-20251001">Haiku 4.5</option>
+        </select>
+        <label class="ai-thinking-toggle">
+          <input type="checkbox" id="ai-thinking" checked> Thinking
+        </label>
+      </div>
+      <textarea id="ai-input" placeholder="Ask a question or request edits..." rows="2"></textarea>
+      <div id="ai-image-preview" class="ai-image-preview"></div>
+      <div class="ai-btn-row">
+        <label class="ai-img-btn" title="Upload image">
+          &#128247;
+          <input type="file" id="ai-image-input" accept="image/*" style="display:none">
+        </label>
+        <button id="ai-send">Send</button>
+      </div>
+    </div>
+  </div>
+  <button id="ai-float-btn" class="ai-float-btn" style="display:none">Ask AI</button>
+  <div class="top-right-btns">
+    <button id="edit-btn" class="top-btn edit-btn" title="Edit source (Ctrl+Shift+E)">Edit</button>
+    <button id="ai-open-btn" class="top-btn ai-btn" title="Open AI Assistant (Ctrl+Shift+A)">AI</button>
+  </div>
+
+  <!-- Source Editor Panel -->
+  <div id="editor-panel" class="editor-panel">
+    <div class="editor-resize" id="editor-resize"></div>
+    <div class="editor-toolbar">
+      <span id="editor-filepath" class="editor-filepath"></span>
+      <div class="editor-toolbar-btns">
+        <button id="editor-save" class="editor-btn editor-btn-save">Save</button>
+        <button id="editor-close" class="editor-btn editor-btn-cancel">Close</button>
+      </div>
+    </div>
+    <div id="editor-container" class="editor-container"></div>
+  </div>
+
+  <!-- CodeMirror 5 -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5/lib/codemirror.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5/theme/one-dark.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/codemirror@5/lib/codemirror.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/codemirror@5/mode/markdown/markdown.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/codemirror@5/mode/gfm/gfm.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/codemirror@5/mode/stex/stex.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/codemirror@5/mode/javascript/javascript.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/codemirror@5/mode/python/python.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/codemirror@5/mode/xml/xml.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/codemirror@5/mode/css/css.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/codemirror@5/addon/mode/overlay.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/codemirror@5/addon/edit/closebrackets.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/codemirror@5/addon/search/search.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/codemirror@5/addon/search/searchcursor.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/codemirror@5/addon/dialog/dialog.min.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5/addon/dialog/dialog.min.css">
+
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="docs/js/ai-sidebar.js"></script>
+  <script src="docs/js/editor.js"></script>
+</body>
+</html>
