@@ -11,6 +11,7 @@ venv/
 
 # Backup
 _backup/
+*.bak
 
 # Claude Code
 .claude/
