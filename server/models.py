@@ -18,6 +18,7 @@ class ChatRequest(BaseModel):
     model: str = "claude-opus-4-6"
     thinking: bool = False
     images: list[ImageData] = []
+    session_id: str = ""  # 传入则复用 CLI 会话，无需重发历史
 
 
 class SuggestEditRequest(BaseModel):

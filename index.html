@@ -17,6 +17,36 @@
     }
     /* 支持 LaTeX 公式的基本样式 */
     .katex { font-size: 1.1em; }
+    /* 知识库统计卡片 */
+    .kb-stats {
+      display: flex;
+      gap: 16px;
+      margin: 12px 0 20px;
+      flex-wrap: wrap;
+    }
+    .kb-stats .stat-card {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 16px;
+      border-radius: 8px;
+      background: #f5f7fa;
+      font-size: 14px;
+      color: #555;
+    }
+    .kb-stats .stat-card .stat-num {
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--theme-color, #3F51B5);
+    }
+    /* 每页字数统计栏 */
+    .page-stats-bar {
+      font-size: 13px;
+      color: #999;
+      padding: 4px 0 12px;
+      border-bottom: 1px solid #eee;
+      margin-bottom: 16px;
+    }
   </style>
   <link rel="stylesheet" href="docs/css/ai-sidebar.css">
 </head>
@@ -84,6 +114,45 @@
 
     window.$docsify = window.$docsify || {};
     window.$docsify.plugins = (window.$docsify.plugins || []).concat(scrollPlugin);
+  </script>
+  <script>
+    // 知识库统计插件 — 首页显示全局统计
+    var statsPlugin = function(hook) {
+      hook.doneEach(function() {
+        var el = document.getElementById('kb-stats');
+        if (!el || el.dataset.loaded) return;
+        el.dataset.loaded = '1';
+        fetch('/api/stats').then(function(r) { return r.json(); }).then(function(d) {
+          var wan = (d.chars / 10000).toFixed(1);
+          el.innerHTML =
+            '<div class="stat-card"><span class="stat-num">' + d.files + '</span> 篇文档</div>' +
+            '<div class="stat-card"><span class="stat-num">' + wan + ' 万</span> 字</div>';
+        }).catch(function() {});
+      });
+    };
+    // 每页字数 + 预估阅读时间插件
+    var pageStatsPlugin = function(hook) {
+      hook.doneEach(function() {
+        var content = document.querySelector('.markdown-section');
+        if (!content) return;
+        // 移除旧的统计栏
+        var old = content.querySelector('.page-stats-bar');
+        if (old) old.remove();
+        var text = content.textContent || '';
+        // 统计中文字符 + 英文单词
+        var cnChars = (text.match(/[\u4e00-\u9fff]/g) || []).length;
+        var enWords = (text.match(/[a-zA-Z]+/g) || []).length;
+        var total = cnChars + enWords;
+        if (total < 10) return; // 太短不显示
+        // 中文阅读速度约 400 字/分钟
+        var minutes = Math.max(1, Math.round(total / 400));
+        var bar = document.createElement('div');
+        bar.className = 'page-stats-bar';
+        bar.textContent = '约 ' + total.toLocaleString() + ' 字 · 预计阅读 ' + minutes + ' 分钟';
+        content.insertBefore(bar, content.firstChild);
+      });
+    };
+    window.$docsify.plugins = (window.$docsify.plugins || []).concat(statsPlugin, pageStatsPlugin);
   </script>
   <script src="https://cdn.jsdelivr.net/npm/docsify@4/lib/docsify.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/docsify@4/lib/plugins/search.min.js"></script>
@@ -165,7 +234,7 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5/addon/dialog/dialog.min.css">
 
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-  <script src="docs/js/ai-sidebar.js"></script>
-  <script src="docs/js/editor.js"></script>
+  <script src="docs/js/ai-sidebar.js?v=3"></script>
+  <script src="docs/js/editor.js?v=2"></script>
 </body>
 </html>

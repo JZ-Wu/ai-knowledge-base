@@ -167,14 +167,44 @@ Reranker 精排 → 选出 Top-3~5（慢但精确，基于交叉注意力）
 送入 LLM 生成回答
 ```
 
-#### 为什么 Reranker 更精确？
+#### Bi-Encoder vs Cross-Encoder：架构本质区别
 
-| 阶段 | 模型类型 | 交互方式 |
-|------|---------|---------|
-| Embedding 检索 | Bi-Encoder（双编码器） | query 和 doc 分别编码，不交互 |
-| Reranker | Cross-Encoder（交叉编码器） | query 和 doc 拼接后一起编码，深度交互 |
+这是理解 RAG 检索链路的核心。两者的区别不只是"精度高低"，而是**模型架构根本不同**。
 
-Cross-Encoder 让 query 和 document 的每个 token 都能互相注意力交互，理解更深入，但计算量大（不能预计算 doc 向量）。
+**Bi-Encoder（双编码器）—— Embedding 检索阶段使用**
+
+Query 和 Document 分别独立通过同一个编码器，各自得到一个向量，然后算余弦相似度。关键点是两者**互不知道对方的存在**，编码时没有任何交互：
+
+```
+Query:    "什么是梯度下降"  → Encoder → q_vec ─┐
+                                                 ├→ cos_sim(q_vec, d_vec) = 0.87
+Document: "梯度下降是一种..."  → Encoder → d_vec ─┘
+
+两次编码完全独立，没有任何 cross-attention
+```
+
+这就是为什么它快——文档向量可以**预先算好存起来**，查询时只需编码 query 再做向量检索。
+
+**Cross-Encoder（交叉编码器）—— Reranker 阶段使用**
+
+把 query 和 document 拼成一个序列 `[CLS] query [SEP] document [SEP]`，一起送进 Transformer。在每一层 self-attention 中，query 的 token 和 document 的 token 都能**互相看到、互相关注**，做深层语义交互。最后从 `[CLS]` 位置输出一个相关性分数：
+
+```
+输入:  [CLS] 什么是梯度下降 [SEP] 梯度下降是一种迭代优化算法... [SEP]
+                    ↕ 每层 self-attention 中 query 和 doc 的 token 深度交互
+输出:  [CLS] → Linear → score = 0.95
+
+精度高，但没法预计算——每来一个新 query，都得和每个候选文档重新跑一遍模型
+```
+
+| 对比 | Bi-Encoder | Cross-Encoder |
+|------|-----------|---------------|
+| 输入方式 | query、doc 分别编码 | query + doc 拼接后联合编码 |
+| 交互深度 | 无交互，只在最后算相似度 | 每层 self-attention 都交互 |
+| 是否可预计算 doc 向量 | ✅ 可以，这是它快的原因 | ❌ 不行，必须和 query 一起跑 |
+| 速度 | 快（毫秒级检索百万文档） | 慢（只能对几十个候选打分） |
+| 精度 | 较好 | 更好 |
+| 典型用途 | 召回阶段（粗筛） | 精排阶段（重排序） |
 
 #### 常用 Reranker
 
@@ -184,6 +214,46 @@ Cross-Encoder 让 query 和 document 的每个 token 都能互相注意力交互
 | **Cohere Rerank** | 商用 API |
 | **Jina Reranker** | 开源 |
 | 用 LLM 做 Rerank | 用 GPT-4 等对结果打分排序（贵但有效） |
+
+### 3.5 向量库与模型的依赖关系
+
+理解各组件之间的绑定关系，是 RAG 工程选型的关键。
+
+#### 核心结论
+
+> **向量库和 Embedding 模型是强绑定的；Reranker 和向量库完全无关。**
+
+向量库里存的每一条向量，都是用某个特定的 Embedding 模型编码出来的。不同模型产出的向量空间完全不同——维度可能不同（768 vs 1024），即使维度相同，语义空间的分布也不一样。因此：
+
+- **换 Embedding 模型 = 必须重建向量库**（对所有文档重新编码），文档量大时是很重的操作
+- **换 Reranker 模型 = 零成本**，Reranker 不产出向量，只接收文本对并打分，随意替换不需要动向量库
+
+#### 完整依赖关系图
+
+```
+建库阶段:
+  Documents → [Embedding 模型 A] → 向量 → 存入向量库
+                    ↑
+                    │ 强绑定：模型和库必须匹配
+                    ↓
+查询阶段:
+  Query → [同一个 Embedding 模型 A] → query向量 → 向量库检索 Top-K
+                                                        │
+                                                        ↓
+                                              [Reranker 模型（任意）] ← 独立，随意替换
+                                                        │
+                                                        ↓
+                                                  精排 Top-N → LLM 生成
+```
+
+#### 选型策略
+
+| 组件 | 替换成本 | 选型建议 |
+|------|---------|---------|
+| **Embedding 模型** | 高（需重建向量库） | 慎重选、早期定好，充分评测后再定型 |
+| **向量数据库** | 中（需数据迁移） | 根据规模和运维能力选择 |
+| **Reranker** | 低（即插即用） | 可以灵活实验和替换，持续调优 |
+| **LLM** | 低（改 API 调用） | 根据效果和成本灵活切换 |
 
 ## 四、混合检索 (Hybrid Search)
 
@@ -284,6 +354,8 @@ GraphRAG: 构建知识图谱
 ---
 
 **相关文档**：
+- [工具调用与MCP](工具调用与MCP.md) — LLM 如何调用外部工具
+- [Agent框架详解](Agent框架详解.md) — Agent 如何编排 RAG 和工具调用
 - [预训练与后训练](../训练与微调/预训练与后训练.md)
 - [对比学习与CLIP详解](../../视觉/对比学习与CLIP详解.md) — Embedding 的对比学习原理
 

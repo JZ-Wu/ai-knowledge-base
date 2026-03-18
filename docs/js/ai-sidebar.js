@@ -10,6 +10,7 @@
   var isStreaming = false;
   var filesEdited = false;
   var abortController = null;
+  var sessionId = ""; // Claude CLI 会话 ID，用于 resume 多轮对话
 
   // ========== DOM refs ==========
   var sidebar = document.getElementById("ai-sidebar");
@@ -30,7 +31,7 @@
 
   function saveHistory() {
     try {
-      var data = { messages: chatMessages, page: currentPagePath };
+      var data = { messages: chatMessages, page: currentPagePath, sessionId: sessionId };
       sessionStorage.setItem(STORAGE_KEY, JSON.stringify(data));
     } catch (_) {}
   }
@@ -44,6 +45,7 @@
 
       chatMessages = data.messages;
       currentPagePath = data.page || "";
+      sessionId = data.sessionId || "";
 
       // 重建 DOM
       chatMessages.forEach(function (m) {
@@ -58,11 +60,34 @@
     messagesEl.innerHTML = "";
     contextEl.innerHTML = "";
     selectedText = "";
+    sessionId = "";
     sessionStorage.removeItem(STORAGE_KEY);
   }
 
-  // 页面加载时恢复历史
+  // ========== Model Persistence ==========
+
+  var MODEL_STORAGE_KEY = "ai_sidebar_model";
+
+  function saveModel() {
+    if (modelSelect) {
+      localStorage.setItem(MODEL_STORAGE_KEY, modelSelect.value);
+    }
+  }
+
+  function loadModel() {
+    var saved = localStorage.getItem(MODEL_STORAGE_KEY);
+    if (saved && modelSelect) {
+      modelSelect.value = saved;
+    }
+  }
+
+  if (modelSelect) {
+    modelSelect.addEventListener("change", saveModel);
+  }
+
+  // 页面加载时恢复历史和模型选择
   loadHistory();
+  loadModel();
 
   // ========== A. Text Selection Detection ==========
 
@@ -111,7 +136,18 @@
   function openSidebar(text) {
     sidebar.classList.add("open");
     document.body.classList.add("ai-sidebar-open");
-    currentPagePath = getPagePath();
+    localStorage.setItem("ai-sidebar-open", "1");
+
+    // 页面变化或选中文字变化 → 重置会话，重新建立上下文
+    var newPage = getPagePath();
+    if (newPage !== currentPagePath) {
+      currentPagePath = newPage;
+      sessionId = "";
+    }
+    if (text && text !== selectedText) {
+      selectedText = text;
+      sessionId = "";
+    }
 
     if (text) {
       contextEl.innerHTML =
@@ -124,12 +160,27 @@
   function closeSidebar() {
     sidebar.classList.remove("open");
     document.body.classList.remove("ai-sidebar-open");
+    localStorage.setItem("ai-sidebar-open", "0");
     var content = document.querySelector(".content");
     if (content) content.style.marginRight = "";
   }
 
   closeBtn.addEventListener("click", closeSidebar);
   if (clearBtn) clearBtn.addEventListener("click", clearHistory);
+
+  // Docsify SPA 页面切换时检测路径变化，重置会话
+  window.addEventListener("hashchange", function () {
+    var newPage = getPagePath();
+    if (newPage !== currentPagePath) {
+      currentPagePath = newPage;
+      sessionId = "";
+    }
+  });
+
+  // Restore sidebar state from localStorage
+  if (localStorage.getItem("ai-sidebar-open") === "1") {
+    openSidebar("");
+  }
 
   // Ctrl+Shift+A toggle
   document.addEventListener("keydown", function (e) {
@@ -239,10 +290,13 @@
     saveHistory();
 
     var assistantEl = appendMessageDOM("assistant", "");
-    // 为 thinking 和正文创建独立容器，避免 renderMarkdown 覆盖 thinking
+    // 为 thinking、工具调用和正文创建独立容器
     var thinkContainer = document.createElement("div");
     thinkContainer.className = "ai-thinking-container";
     assistantEl.appendChild(thinkContainer);
+    var toolContainer = document.createElement("div");
+    toolContainer.className = "ai-tool-container";
+    assistantEl.appendChild(toolContainer);
     var textContainer = document.createElement("div");
     textContainer.className = "ai-text-container";
     assistantEl.appendChild(textContainer);
@@ -263,6 +317,7 @@
           model: modelSelect ? modelSelect.value : "claude-opus-4-6",
           thinking: thinkingCheckbox ? thinkingCheckbox.checked : false,
           images: images,
+          session_id: sessionId,
         }),
         signal: abortController.signal,
       });
@@ -290,7 +345,10 @@
           try {
             var data = JSON.parse(line.slice(6));
 
-            if (data.type === "thinking") {
+            if (data.type === "session_id") {
+              sessionId = data.session_id;
+              saveHistory();
+            } else if (data.type === "thinking") {
               var thinkEl = thinkContainer.querySelector(".ai-thinking-block");
               if (!thinkEl) {
                 thinkEl = document.createElement("details");
@@ -307,15 +365,34 @@
               scrollToBottom();
             } else if (data.type === "tool") {
               filesEdited = true;
+              // 确保 toolContainer 里有 <details> 折叠块
+              var toolDetails = toolContainer.querySelector(".ai-tool-block");
+              if (!toolDetails) {
+                toolDetails = document.createElement("details");
+                toolDetails.className = "ai-tool-block";
+                toolDetails.setAttribute("open", "");
+                toolDetails.innerHTML = "<summary>Tool Calls</summary><div class='ai-tool-list'></div>";
+                toolContainer.appendChild(toolDetails);
+              }
+              var toolList = toolDetails.querySelector(".ai-tool-list");
               var toolInfo = document.createElement("div");
               toolInfo.className = "ai-tool-info";
               toolInfo.innerHTML =
                 '<span class="tool-icon">&#9881;</span> ' +
                 "<strong>" + escapeHtml(data.tool) + "</strong> " +
                 '<span class="tool-file">' + escapeHtml(data.file || "") + "</span>";
-              messagesEl.appendChild(toolInfo);
+              toolList.appendChild(toolInfo);
+              scrollToBottom();
+            } else if (data.type === "context_compact") {
+              fullResponse += "\n\n> *Context compacted — 上下文已压缩，早期对话可能被摘要*\n\n";
+              renderMarkdown(textContainer, fullResponse);
               scrollToBottom();
             } else if (data.type === "error") {
+              // resume 失败时重置 session，下次自动新建会话
+              if (sessionId && data.content.indexOf("CLI error") !== -1) {
+                sessionId = "";
+                saveHistory();
+              }
               fullResponse += "\n\n**Error:** " + data.content;
               renderMarkdown(textContainer, fullResponse);
             }
@@ -323,9 +400,11 @@
         }
       }
 
-      // 回复完成后折叠 thinking
+      // 回复完成后折叠 thinking 和 tool calls
       var doneThinkEl = thinkContainer.querySelector(".ai-thinking-block");
       if (doneThinkEl) doneThinkEl.removeAttribute("open");
+      var doneToolEl = toolContainer.querySelector(".ai-tool-block");
+      if (doneToolEl) doneToolEl.removeAttribute("open");
 
       chatMessages.push({ role: "assistant", content: fullResponse });
       saveHistory();
@@ -392,32 +471,59 @@
 
   function renderMarkdown(el, text) {
     if (typeof marked !== "undefined" && text) {
-      // 保护 LaTeX 块不被 marked 破坏
-      var mathBlocks = [];
-      var placeholder = function (m) {
-        var idx = mathBlocks.length;
-        mathBlocks.push(m);
+      // 提取 LaTeX 块，直接渲染为 HTML，避免 marked 和 renderMathInElement 二次解析冲突
+      var mathHtmls = [];
+      var placeholder = function (raw, display) {
+        var idx = mathHtmls.length;
+        var rendered;
+        try {
+          // 去掉定界符，提取纯 LaTeX 内容
+          var tex = raw;
+          if (display) {
+            if (tex.startsWith("$$")) tex = tex.slice(2, -2);
+            else if (tex.startsWith("\\[")) tex = tex.slice(2, -2);
+          } else {
+            if (tex.startsWith("\\(")) tex = tex.slice(2, -2);
+            else if (tex.startsWith("$")) tex = tex.slice(1, -1);
+          }
+          rendered = katex.renderToString(tex.trim(), {
+            displayMode: display,
+            throwOnError: false,
+            trust: true,
+          });
+        } catch (_) {
+          rendered = '<code class="katex-error">' + escapeHtml(raw) + "</code>";
+        }
+        mathHtmls.push(rendered);
         return "\x00MATH" + idx + "\x00";
       };
-      // 先提取 $$...$$ 和 \[...\]（display），再提取 $...$ 和 \(...\)（inline）
-      // 注意：$$ 必须先于 $ 提取，避免误匹配
+
+      // 提取顺序很重要：先长定界符，后短定界符
+      // 1) $$...$$ (display, 可跨行)
+      // 2) \[...\] (display, 可跨行)
+      // 3) \(...\) (inline)
+      // 4) $...$ (inline, 不跨行，内容不能以空格开头/结尾，不匹配纯数字如价格 $100)
       var safe = text
-        .replace(/\$\$([\s\S]+?)\$\$/g, placeholder)
-        .replace(/\\\[([\s\S]+?)\\\]/g, placeholder)
-        .replace(/\\\((.+?)\\\)/g, placeholder)
-        .replace(/\$([^\$\n]+?)\$/g, placeholder);
+        .replace(/\$\$([\s\S]+?)\$\$/g, function (m) { return placeholder(m, true); })
+        .replace(/\\\[([\s\S]+?)\\\]/g, function (m) { return placeholder(m, true); })
+        .replace(/\\\((.+?)\\\)/g, function (m) { return placeholder(m, false); })
+        .replace(/\$([^\$\n]*?[^\$\s])\$/g, function (m, inner) {
+          // 跳过空内容和纯数字 (如 $100)
+          if (!inner || /^\d+$/.test(inner)) return m;
+          return placeholder(m, false);
+        });
 
       var html = marked.parse(safe);
 
-      // 还原 LaTeX 块
+      // 还原已渲染的 KaTeX HTML
       html = html.replace(/\x00MATH(\d+)\x00/g, function (_, idx) {
-        return mathBlocks[parseInt(idx)];
+        return mathHtmls[parseInt(idx)];
       });
       el.innerHTML = html;
     } else {
       el.textContent = text;
     }
-    renderKatex(el);
+    // 不再调用 renderMathInElement —— LaTeX 已在上面直接渲染完毕
   }
 
   function scrollToBottom() {

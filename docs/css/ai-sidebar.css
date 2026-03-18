@@ -252,13 +252,41 @@ body.ai-sidebar-open .content {
   overflow-y: auto;
 }
 
-/* ---- Tool call info ---- */
-.ai-tool-info {
-  padding: 6px 12px;
-  margin: 4px 0;
+/* ---- Tool call block (collapsible) ---- */
+.ai-tool-block {
+  margin-bottom: 8px;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  font-size: 12px;
+  overflow: hidden;
+}
+
+.ai-tool-block summary {
+  display: list-item;
+  padding: 6px 10px;
   background: #E8EAF6;
-  border-left: 3px solid #3F51B5;
-  border-radius: 4px;
+  color: #3F51B5;
+  font-weight: 500;
+  cursor: pointer;
+  user-select: none;
+  list-style: disclosure-closed inside;
+}
+
+.ai-tool-block[open] summary {
+  list-style-type: disclosure-open;
+}
+
+.ai-tool-block:not([open]) .ai-tool-list {
+  display: none;
+}
+
+.ai-tool-list {
+  padding: 4px 0;
+}
+
+.ai-tool-info {
+  padding: 4px 12px;
+  margin: 2px 0;
   font-size: 12px;
   color: #333;
   display: flex;

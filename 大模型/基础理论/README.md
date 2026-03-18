@@ -19,5 +19,8 @@
 ### 长上下文
 - [长上下文详解](长上下文详解.md) — RoPE 外推 (PI/NTK/YaRN)、Sliding Window Attention、KV Cache 压缩 (MLA)
 
+### CoT 与推理范式
+- [CoT与推理范式](CoT与推理范式.md) — Chain-of-Thought 发展历程、Zero-shot/Few-shot CoT、Self-Consistency、推理模型 (o1/R1)、Test-time Compute Scaling
+
 ---
 [返回上级](../README.md) | [返回总目录](../../README.md)

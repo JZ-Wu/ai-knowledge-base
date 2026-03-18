@@ -29,6 +29,7 @@ async def chat(request: ChatRequest):
                 model=request.model,
                 thinking=request.thinking,
                 images=[{"base64": img.base64, "media_type": img.media_type} for img in request.images],
+                session_id=request.session_id,
             ):
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
             yield f"data: {json.dumps({'type': 'done'})}\n\n"

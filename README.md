@@ -1,5 +1,7 @@
 # AI 知识库
 
+<div id="kb-stats" class="kb-stats"></div>
+
 > 选中文字 → 问 AI → AI 直接改源文件。
 
 <!-- 在这里放一张截图或 GIF：展示选中文字后 AI 侧边栏弹出、AI 回答并编辑文件的完整流程 -->
@@ -66,6 +68,7 @@ python run.py                                         # 打开 http://localhost:
 |------|------|
 | **[大模型](大模型/README.md)** | Transformer、Tokenizer、MoE、Scaling Laws、长上下文、SFT/RLHF/DPO/GRPO、推理优化（KV Cache/FlashAttention/量化/vLLM/投机解码）、RAG、VLM、评估与对齐、主流模型全景对比 |
 | **[机器学习基础](机器学习基础/README.md)** | 概率统计（8 章）、线性代数（5 篇）、IML 课程（12 讲）、深度学习基础、KL 散度 |
+| **[强化学习](强化学习/README.md)** | MDP/Bellman 方程、Q-Learning/DQN、策略梯度/PPO/SAC、Model-Based RL/MuZero、Offline RL/Decision Transformer、MARL |
 | **[视觉](视觉/README.md)** | 对比学习与 CLIP、DINO、生成模型（VAE/Diffusion）、3D 稀疏卷积 |
 | **[面试手撕](面试手撕/README.md)** | 大模型组件手撕（MHA/RoPE/SwiGLU/RMSNorm/LoRA...）+ 算法手撕 |
 | **[论文阅读](论文阅读/README.md)** | 2D/3D 检测分割、生成模型（DDPM/ControlNet）、Point Transformer |
