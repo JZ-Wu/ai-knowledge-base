@@ -11,6 +11,7 @@
   var filesEdited = false;
   var abortController = null;
   var sessionId = ""; // Claude CLI 会话 ID，用于 resume 多轮对话
+  var lastSentPagePath = ""; // 上次发送给 AI 的页面路径，避免重复发送相同页面内容
 
   // ========== DOM refs ==========
   var sidebar = document.getElementById("ai-sidebar");
@@ -61,6 +62,7 @@
     contextEl.innerHTML = "";
     selectedText = "";
     sessionId = "";
+    lastSentPagePath = "";
     sessionStorage.removeItem(STORAGE_KEY);
   }
 
@@ -138,15 +140,13 @@
     document.body.classList.add("ai-sidebar-open");
     localStorage.setItem("ai-sidebar-open", "1");
 
-    // 页面变化或选中文字变化 → 重置会话，重新建立上下文
+    // 跟踪当前页面和选中文字（不重置 session，保留跨页对话上下文）
     var newPage = getPagePath();
     if (newPage !== currentPagePath) {
       currentPagePath = newPage;
-      sessionId = "";
     }
     if (text && text !== selectedText) {
       selectedText = text;
-      sessionId = "";
     }
 
     if (text) {
@@ -168,12 +168,11 @@
   closeBtn.addEventListener("click", closeSidebar);
   if (clearBtn) clearBtn.addEventListener("click", clearHistory);
 
-  // Docsify SPA 页面切换时检测路径变化，重置会话
+  // Docsify SPA 页面切换时更新当前页面路径（保留 session 以支持跨页对话）
   window.addEventListener("hashchange", function () {
     var newPage = getPagePath();
     if (newPage !== currentPagePath) {
       currentPagePath = newPage;
-      sessionId = "";
     }
   });
 
@@ -307,11 +306,16 @@
     setStreamingUI(true);
 
     try {
+      // 有 session 时，只在页面变化时才发送页面内容，避免重复注入
+      var sendPagePath = currentPagePath;
+      if (sessionId && currentPagePath === lastSentPagePath) {
+        sendPagePath = "";  // 页面没变，不重复发送内容
+      }
       var response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          page_path: currentPagePath,
+          page_path: sendPagePath,
           selected_text: selectedText,
           messages: chatMessages,
           model: modelSelect ? modelSelect.value : "claude-opus-4-6",
@@ -321,6 +325,7 @@
         }),
         signal: abortController.signal,
       });
+      lastSentPagePath = currentPagePath;
 
       if (!response.ok) throw new Error("API error: " + response.status);
 

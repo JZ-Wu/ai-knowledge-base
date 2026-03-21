@@ -197,6 +197,72 @@ $$L = \frac{1}{2}(L_{i2t} + L_{t2i})$$
 | **BLIP-2** | CLIP 特征 + Q-Former + LLM |
 | **SigLIP2** | Google 2025 年最新，结合 CLIP 对比学习与自监督目标 |
 
+### SigLIP 详解
+
+**论文**：Sigmoid Loss for Language Image Pre-Training (2023, Google)
+
+CLIP 用 softmax 做对比损失，SigLIP 改用 **sigmoid**——看起来只是换个损失函数，但影响深远。
+
+#### CLIP 的问题：softmax 需要全局通信
+
+CLIP 的 InfoNCE 损失对 N×N 相似度矩阵做 softmax，分母需要**整个 batch 所有样本的相似度之和**。在多 GPU 分布式训练时，这意味着每个 GPU 必须收集所有其他 GPU 上的特征才能算分母——通信开销巨大。
+
+```
+CLIP (softmax):
+  GPU₁ 有样本 1~1000，GPU₂ 有样本 1001~2000，...
+  计算 softmax 分母时：每个 GPU 都需要所有 GPU 的特征
+  → all-gather 通信，随 GPU 数量线性增长
+
+SigLIP (sigmoid):
+  每个 (图像, 文本) 对独立算 sigmoid
+  → 不需要全局通信，天然适合分布式
+```
+
+#### 损失函数对比
+
+**CLIP（softmax / InfoNCE）**：
+
+$$L_{i2t} = -\frac{1}{N}\sum_{i=1}^{N} \log \frac{\exp(s_{ii}/\tau)}{\sum_{j=1}^{N} \exp(s_{ij}/\tau)}$$
+
+这是一个 **N 分类问题**：在 N 个文本中找到匹配的那一个。分母耦合了所有样本。
+
+**SigLIP（sigmoid）**：
+
+$$L = -\frac{1}{N^2}\sum_{i=1}^{N}\sum_{j=1}^{N} \log \frac{1}{1 + \exp(z_{ij} \cdot (-t \cdot s_{ij} + b))}$$
+
+其中 $z_{ij} = \begin{cases} 1 & \text{if } i=j \text{ (正样本对)} \\ -1 & \text{if } i \neq j \text{ (负样本对)} \end{cases}$，$t$ 和 $b$ 是可学习的温度和偏置。
+
+这是 $N^2$ 个**独立的二分类问题**：每个 (图像, 文本) 对独立判断"是否匹配"。
+
+```
+CLIP:   "这张图和哪个文本最匹配？"   → N 选 1（softmax）
+SigLIP: "这张图和这个文本匹配吗？"   → 是/否（sigmoid）× N² 次
+```
+
+#### 为什么 sigmoid 能 work？
+
+直觉上 softmax 更好——它有明确的"在 N 个中选最好的"语义。sigmoid 把问题拆成独立的二分类，丢失了负样本之间的相对关系。
+
+但实际上 SigLIP 效果和 CLIP **持平甚至更好**，原因：
+
+1. **去掉全局通信后可以用更大的 batch**：通信瓶颈消除，实际训练 batch size 可以开更大，负样本更多，弥补了 sigmoid 的信息损失
+2. **更稳定的梯度**：softmax 中一个特别难的负样本会主导梯度；sigmoid 中每对独立贡献，训练更平稳
+3. **chunked loss 计算**：不需要 materialize 完整的 N×N 矩阵，可以分块计算，显存更友好
+
+#### SigLIP 在 VLM 中的地位
+
+SigLIP 的视觉编码器（SigLIP-SO400M/14）已经成为当前 VLM 最主流的视觉骨干，取代了原版 CLIP ViT：
+
+| VLM | 视觉编码器 |
+|-----|-----------|
+| LLaVA-1.5 | CLIP ViT-L/14 |
+| LLaVA-NeXT / LLaVA-OneVision | **SigLIP-SO400M/14** |
+| InternVL 2.5 | InternViT（SigLIP 训练方式） |
+| Qwen2-VL | 自训练 ViT（SigLIP 风格损失） |
+| PaliGemma | **SigLIP-SO400M/14** |
+
+> SO400M = Shape-Optimized 400M 参数，Google 通过 NAS 搜索出的 ViT 架构变体。
+
 ---
 
 ## 四、CLIP 在 VLM 中的角色
