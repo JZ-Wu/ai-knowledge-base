@@ -41,10 +41,17 @@
   - [多智能体强化学习](/强化学习/多智能体强化学习.md)
 
 - **视觉**
-  - [对比学习与CLIP详解](/视觉/对比学习与CLIP详解.md)
-  - [DINO详解](/视觉/DINO详解.md)
-  - [生成模型详解（VAE与Diffusion）](/视觉/生成模型详解.md)
-  - [3D稀疏卷积](/视觉/3D稀疏卷积.md)
+  - 表示学习
+    - [对比学习与CLIP详解](/视觉/表示学习/对比学习与CLIP详解.md)
+    - [DINO详解](/视觉/表示学习/DINO详解.md)
+  - 生成模型
+    - [VAE详解](/视觉/生成模型/VAE详解.md)
+    - [Diffusion详解](/视觉/生成模型/Diffusion详解.md)
+    - [采样加速与条件生成](/视觉/生成模型/采样加速与条件生成.md)
+    - [Stable Diffusion详解](/视觉/生成模型/Stable_Diffusion详解.md)
+    - [Flow Matching详解](/视觉/生成模型/Flow_Matching详解.md)
+  - 3D视觉
+    - [3D稀疏卷积](/视觉/3D视觉/3D稀疏卷积.md)
 
 - **机器学习基础**
   - [总览](/机器学习基础/README.md)

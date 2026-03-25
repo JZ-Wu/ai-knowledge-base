@@ -1,36 +1,25 @@
 # 视觉
 
-计算机视觉：表示学习、视觉基础模型与 3D 视觉。
+计算机视觉：表示学习、生成模型与 3D 视觉。
 
-## 知识点索引
+## 知识方向索引
 
-### 视觉基础模型与表示学习
-- [对比学习与CLIP详解](对比学习与CLIP详解.md) — 对比学习范式、SimCLR、MoCo、CLIP、SigLIP
-- [DINO详解](DINO详解.md) — 自蒸馏、DINOv1/v2、视觉特征的涌现特性
+### [表示学习](表示学习/README.md)
+视觉基础模型与自监督学习
+- [对比学习与CLIP详解](表示学习/对比学习与CLIP详解.md) — SimCLR、MoCo、CLIP、SigLIP
+- [DINO详解](表示学习/DINO详解.md) — 自蒸馏、DINOv1/v2、涌现特性
 
-### 生成模型
-- [生成模型详解（VAE与Diffusion）](生成模型详解.md) — AE→VAE（ELBO、重参数化、KL解析解）、DDPM、Score Matching、DDIM、CFG、Latent Diffusion / Stable Diffusion
+### [生成模型](生成模型/README.md)
+从 VAE 到 Stable Diffusion 到 Flow Matching
+- [VAE 详解](生成模型/VAE详解.md) — AE→VAE（ELBO、重参数化）→ VQ-VAE
+- [Diffusion 详解](生成模型/Diffusion详解.md) — DDPM、Score Matching、SDE 统一
+- [采样加速与条件生成](生成模型/采样加速与条件生成.md) — DDIM、CFG、Consistency Models
+- [Stable Diffusion 详解](生成模型/Stable_Diffusion详解.md) — LDM 架构、ControlNet、各版本对比
+- [Flow Matching 详解](生成模型/Flow_Matching详解.md) — 条件 FM、Rectified Flow、SD3/FLUX
 
-### 3D 视觉工程
-- [3D稀疏卷积](3D稀疏卷积.md) — Hash Map、Rulebook、Implicit GEMM，点云处理的核心工程实现
-
-### 3D 表示 (点云 / 体素 / 网格 / NeRF / 3DGS)
-<!-- 待添加 -->
-
-### 深度估计
-<!-- 待添加 -->
-
-### 三维重建
-<!-- 待添加 -->
-
-### 3D 目标检测与分割
-<!-- 待添加 -->
-
-### 相机模型与标定
-<!-- 待添加 -->
-
-### SLAM 与视觉定位
-<!-- 待添加 -->
+### [3D 视觉](3D视觉/README.md)
+3D 数据处理、表示与理解
+- [3D稀疏卷积](3D视觉/3D稀疏卷积.md) — Hash Map、Rulebook、Implicit GEMM
 
 ---
 [返回总目录](../README.md)

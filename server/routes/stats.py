@@ -23,7 +23,7 @@ def get_stats():
         if any(p.startswith(".") or p == "node_modules" for p in parts):
             continue
         try:
-            total_chars += md.stat().st_size
+            total_chars += len(md.read_text(encoding="utf-8"))
             total_files += 1
         except Exception:
             pass

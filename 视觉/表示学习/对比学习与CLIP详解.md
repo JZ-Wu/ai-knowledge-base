@@ -116,7 +116,7 @@ $$\theta_k \leftarrow m \cdot \theta_k + (1 - m) \cdot \theta_q$$
 
 ### 架构
 
-![CLIP 架构: 图像编码器 + 文本编码器 + 对比学习 (Radford et al., 2021)](assets/clip_architecture.png)
+![CLIP 架构: 图像编码器 + 文本编码器 + 对比学习 (Radford et al., 2021)](../assets/clip_architecture.png)
 
 > 图源: *Learning Transferable Visual Models From Natural Language Supervision (CLIP)*, Figure 1. 图像和文本分别经过各自的 Encoder 投影到同一特征空间，通过对比学习对齐配对的图文特征。
 
@@ -289,4 +289,4 @@ LLaVA / Qwen-VL / InternVL 等 VLM 架构:
 - [DINO详解](DINO详解.md)
 - [VLM详解](../大模型/多模态/VLM详解.md)
 
-[返回上级](README.md) | [返回总目录](../README.md)
+[返回上级](README.md) | [返回总目录](../../README.md)
