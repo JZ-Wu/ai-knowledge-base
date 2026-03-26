@@ -1,0 +1,327 @@
+# VLM 主流架构详解
+
+深入解析各主流 VLM 的具体架构设计、训练策略和核心创新。
+
+## 一、LLaVA 系列（最经典、最简洁）
+
+### 1.1 LLaVA (2023.04)
+
+**核心思想**：用最简单的架构证明 VLM 不需要复杂的 Q-Former。
+
+```
+架构:
+  图像 → CLIP ViT-L/14 (224px) → 256 个 patch 特征
+       → 单层 Linear 投影 → 视觉 token
+       + 文本 token → Vicuna-13B → 回答
+```
+
+**数据创新**：用 GPT-4 生成视觉指令数据
+- 将图像的 caption 和 bbox 信息发给 GPT-4（纯文本）
+- GPT-4 生成对话、详细描述、复杂推理等指令数据
+- 共 158K 条，开创了 VLM 指令数据的构造范式
+
+### 1.2 LLaVA-1.5 (2023.10)
+
+在 LLaVA 基础上的关键改进：
+
+| 改进点 | LLaVA | LLaVA-1.5 |
+|--------|-------|-----------|
+| 投影层 | 单层 Linear | 两层 MLP + GELU |
+| 分辨率 | 224px | 336px |
+| 训练数据 | 158K | 665K (加入学术 VQA 数据) |
+| ViT | CLIP ViT-L/14 | CLIP ViT-L/14 @336px |
+
+> **重要发现**：仅通过简单改进（MLP 投影 + 更高分辨率 + 更多数据），就超越了复杂架构（如 InstructBLIP），再次证明**数据 > 架构**。
+
+### 1.3 LLaVA-NeXT / LLaVA-OneVision (2024)
+
+```
+关键改进:
+1. 动态高分辨率 (AnyRes):
+   - 不再固定 336px，支持多种分辨率
+   - 将图像切成多个 tile + 一个全局缩略图
+   - 大幅提升 OCR 和文档理解能力
+
+2. 更强的 LLM:
+   - 从 Vicuna → Qwen2, LLaMA-3
+
+3. 统一图像/视频/多图:
+   - LLaVA-OneVision 用一个模型处理所有视觉输入
+```
+
+### 1.4 LLaVA 系列训练流程
+
+```
+Stage 1: 预训练对齐 (约 1 epoch)
+├── 数据: 595K 图文描述对 (LAION-CC-SBU 子集)
+├── 可训练: 仅投影层 MLP
+├── 冻结: ViT + LLM
+├── 目的: 学会将视觉特征映射到 LLM 的语义空间
+└── 耗时: 约 5.5 小时 (8×A100)
+
+Stage 2: 视觉指令微调 (约 1 epoch)
+├── 数据: 665K 混合数据 (对话 + VQA + OCR + 推理...)
+├── 可训练: 投影层 + LLM (全量微调)
+├── 冻结: ViT
+├── 目的: 学会遵循多种视觉指令
+└── 耗时: 约 20 小时 (8×A100)
+```
+
+---
+
+## 二、BLIP-2 (2023.01)
+
+### 2.1 核心创新：Q-Former
+
+BLIP-2 的关键贡献是 Q-Former——一个轻量级 Transformer，用于桥接冻结的 ViT 和冻结的 LLM。
+
+![BLIP-2 框架: 冻结 ViT + Q-Former + 冻结 LLM (Li et al., 2023)](assets/blip2_framework.png)
+
+> 图源: *BLIP-2*, Figure 1.
+
+**设计动机**：ViT 和 LLM 都非常大，全量微调成本高。Q-Former 只有约 188M 参数，可以低成本训练。
+
+### 2.2 Q-Former 内部结构
+
+![Q-Former 内部结构与第一阶段训练目标 (Li et al., 2023)](assets/blip2_qformer.png)
+
+> 图源: *BLIP-2*, Figure 2.
+
+```
+Q-Former 结构:
+├── 32 个可学习 Query Token (每个 768 维)
+├── Self-Attention 层 (query 之间交互)
+├── Cross-Attention 层 (query → ViT 输出)
+└── Feed-Forward 层
+
+信息流:
+  ViT 输出 (257×1024) ──Cross-Attention──→ Query (32×768)
+                                              │
+                                        Self-Attention
+                                              │
+                                        Feed-Forward
+                                              ↓
+                                       32 个压缩特征
+```
+
+### 2.3 BLIP-2 两阶段训练
+
+**第一阶段：视觉-语言表示学习（训练 Q-Former）**
+
+三个联合目标：
+| 目标 | 全称 | 作用 |
+|------|------|------|
+| **ITC** | Image-Text Contrastive | 对齐 query 和文本的全局表示 |
+| **ITM** | Image-Text Matching | 二分类判断图文是否匹配 |
+| **ITG** | Image-grounded Text Generation | 用视觉信息生成文本 |
+
+通过注意力掩码控制不同目标：
+- ITC：query 不能看到文本（避免信息泄露）
+- ITG：query 可以看到前面的文本 token（causal mask）
+- ITM：query 可以看到所有文本（bidirectional）
+
+**第二阶段：生成式预训练（连接 LLM）**
+
+```
+冻结 ViT → Q-Former (微调) → Linear → 冻结 LLM
+                                         ↓
+          32 个视觉 token 作为 LLM 的 "soft prompt"
+```
+
+### 2.4 BLIP-2 的优劣
+
+| 优势 | 劣势 |
+|------|------|
+| 训练成本低（只训 Q-Former） | 压缩信息丢失（32 个 token 看不清细节） |
+| 可适配不同 LLM | Q-Former 训练复杂（3 个目标） |
+| 推理高效（视觉 token 少） | 在 OCR/文档理解任务上较弱 |
+
+---
+
+## 三、InternVL 系列（开源最强之一）
+
+### 3.1 InternVL 1.0 (2023.12)
+
+核心创新：**自训练超大视觉编码器 InternViT-6B**。
+
+```
+为什么要自训 ViT？
+- CLIP ViT 最大到 ~2B 参数，而 LLM 已经到 70B+
+- ViT 和 LLM 的参数量差距太大，成为瓶颈
+- InternViT-6B 是当时最大的开源 ViT
+
+InternViT-6B 训练:
+  渐进式训练（Progressive Training）
+  ViT-L → ViT-H → ViT-6B
+  使用大规模图文对比学习
+```
+
+### 3.2 InternVL 1.5 / 2.0 / 2.5
+
+逐步迭代的关键改进：
+
+| 版本 | 关键改进 |
+|------|---------|
+| **1.5** | 动态分辨率（切 tile）、Pixel Shuffle 下采样 |
+| **2.0** | 多模型尺寸（1B~76B）、多图/视频支持 |
+| **2.5** | 更强训练数据、更好的推理能力 |
+
+### 3.3 InternVL2 架构详解
+
+```
+高分辨率图像 (如 1344×896)
+    │
+    ├── 全局缩略图 (448×448) ──→ InternViT-6B → 1024 token
+    │                                                │
+    └── 切成 6 个 tile (每个 448×448)                │
+        ├── tile 1 → InternViT-6B → 1024 token     │
+        ├── tile 2 → InternViT-6B → 1024 token     │
+        └── ...                                      │
+                                                     ↓
+                          所有 token 拼接 → Pixel Shuffle (4x 下采样)
+                                                     │
+                                              MLP 投影到 LLM 维度
+                                                     │
+                                              + 文本 token
+                                                     ↓
+                                           InternLM2 → 回答
+
+Token 数计算:
+  每个 tile: 1024 → Pixel Shuffle → 256
+  6 个 tile + 1 个全局 = 7 × 256 = 1792 个视觉 token
+```
+
+### 3.4 InternVL 的优势
+
+1. **超大 ViT**：6B 参数的 InternViT 捕获更丰富的视觉特征
+2. **动态分辨率**：适应不同尺寸的图像输入
+3. **全尺寸覆盖**：从 1B 到 76B，覆盖不同部署需求
+4. **端到端训练**：ViT + 投影 + LLM 全部解冻
+
+---
+
+## 四、Qwen-VL 系列
+
+### 4.1 Qwen-VL (2023.08)
+
+```
+架构:
+  图像 → ViT-bigG (自训) → 256 个视觉 token
+       → 单层 Cross-Attention (Resampler) → 压缩
+       + 文本 token → Qwen-7B → 回答
+
+特点:
+  - 支持多语言（中英日韩等）
+  - 支持多图输入
+  - 支持 bbox 输入输出（视觉定位）
+```
+
+### 4.2 Qwen-VL2 (2024)
+
+关键改进：**Naive Dynamic Resolution**
+
+```
+与 InternVL 的动态切片不同，Qwen-VL2 直接处理原始分辨率:
+  - 不切 tile，直接将原始分辨率图像送入 ViT
+  - ViT 输出的 token 数随分辨率动态变化
+  - 用 2D-RoPE 处理不同分辨率的位置编码
+
+优势: 避免 tile 切割导致的物体截断问题
+劣势: 超高分辨率时 token 数可能很多
+```
+
+### 4.3 Qwen-VL2 的 MoE 变体
+
+Qwen-VL2-72B 实际使用了 MoE（Mixture of Experts）架构：
+- 总参数 72B，但每次推理只激活约 12B
+- 推理成本远低于同等参数的 Dense 模型
+
+---
+
+## 五、其他重要架构
+
+### 5.1 Flamingo (2022.04, DeepMind)
+
+VLM 的先驱之一：
+
+```
+关键创新:
+1. Perceiver Resampler: 注意力池化压缩视觉 token
+2. Gated Cross-Attention: 在 LLM 层间插入交叉注意力层
+   - 不同于其他方案把视觉 token 和文本拼接
+   - 而是在 LLM 的每一层都进行视觉-文本交叉注意力
+   - 用可学习的门控参数控制视觉信息的注入强度
+
+3. Few-shot 能力: 支持多图 few-shot（给几个示例图+答案，再问新图）
+```
+
+### 5.2 Cambrian-1 (2024, NYU)
+
+**探索最优视觉表征**的系统性研究：
+
+```
+核心问题: 哪种 Vision Encoder 对 VLM 最好？
+
+实验方法:
+  测试了 20+ 种不同的 Vision Encoder
+  包括: CLIP 系列、SigLIP、DINOv2、MAE、SAM encoder 等
+
+关键发现:
+1. 没有单一 encoder 在所有任务上最优
+2. CLIP/SigLIP 在语义任务上领先
+3. DINOv2 在空间/定位任务上领先
+4. 多 encoder 融合 > 单一 encoder
+
+最终方案: Spatial Vision Aggregator (SVA)
+  融合多个 encoder 的特征，动态选择不同层的特征
+```
+
+### 5.3 DeepSeek-VL2 (2024)
+
+```
+创新点:
+1. 使用 DeepSeek-MoE 作为 LLM 骨干
+   - 总参数 16B，激活参数仅 2.8B
+   - 推理速度快，成本低
+
+2. 动态切片 + 高分辨率
+   - 最高支持 1536×1536
+
+3. 多粒度视觉特征
+   - 同时保留全局和局部特征
+```
+
+---
+
+## 六、架构对比总结
+
+| 模型 | ViT | 投影方式 | LLM | 视觉 token 数 | 最高分辨率 |
+|------|-----|---------|-----|-------------|-----------|
+| LLaVA-1.5 | CLIP ViT-L | MLP | Vicuna-13B | 576 | 336px |
+| BLIP-2 | EVA-CLIP ViT-G | Q-Former | FlanT5/Vicuna | 32 | 224px |
+| InternVL2-76B | InternViT-6B | Pixel Shuffle + MLP | InternLM2-76B | 动态 | 动态 tile |
+| Qwen-VL2-72B | ViT-bigG (自训) | MLP | Qwen2-72B (MoE) | 动态 | 原始分辨率 |
+| LLaVA-OneVision | SigLIP | MLP | Qwen2-72B | 动态 | 动态 tile |
+| DeepSeek-VL2 | SigLIP | MLP | DeepSeek-MoE | 动态 | 1536px |
+
+### 架构演进趋势
+
+```
+2022: 冻结一切，只训连接器 (Flamingo, BLIP-2)
+         ↓ 训练更多参数效果更好
+2023: 冻结 ViT，训连接器 + LLM (LLaVA)
+         ↓ 更大的 ViT 更好
+2024: 全部解冻，端到端训练 (InternVL2, Qwen-VL2)
+         ↓ 下一步？
+2025: 原生多模态预训练？(不再分三个组件)
+```
+
+---
+
+**相关文档**：
+- [VLM 概述](VLM概述.md) — VLM 总览与入门
+- [VLM 三大组件详解](VLM三大组件详解.md) — 各组件的深入分析
+- [VLM 关键技术](VLM关键技术.md) — 高分辨率处理、Token 压缩等
+- [VLM 训练与评测](VLM训练与评测.md) — 训练流程与评测基准
+
+[返回上级](README.md) | [返回总目录](../../README.md)
