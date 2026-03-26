@@ -21,3 +21,6 @@ DOCS_ROOT = Path(__file__).parent.parent.resolve()
 
 # 最大页面内容长度 (字符数，防止超出 context window)
 MAX_PAGE_CHARS = 30000
+
+# 局域网访问密码 (为空则不启用认证)
+ACCESS_PASSWORD = os.getenv("ACCESS_PASSWORD", "")
