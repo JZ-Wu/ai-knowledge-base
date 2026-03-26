@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <title>AI 知识库</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/docsify-themeable@0/dist/css/theme-simple.css">
+  <link rel="stylesheet" href="docs/vendor/css/theme-simple.css">
   <style>
     :root {
       --base-font-size: 15px;
@@ -154,13 +154,13 @@
     };
     window.$docsify.plugins = (window.$docsify.plugins || []).concat(statsPlugin, pageStatsPlugin);
   </script>
-  <script src="https://cdn.jsdelivr.net/npm/docsify@4/lib/docsify.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/docsify@4/lib/plugins/search.min.js"></script>
+  <script src="docs/vendor/js/docsify.min.js"></script>
+  <script src="docs/vendor/js/search.min.js"></script>
   <!-- 数学公式支持 -->
-  <script src="https://cdn.jsdelivr.net/npm/docsify-katex@1/dist/docsify-katex.min.js"></script>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0/dist/katex.min.css">
-  <script src="https://cdn.jsdelivr.net/npm/katex@0/dist/katex.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/katex@0/dist/contrib/auto-render.min.js"></script>
+  <script src="docs/vendor/js/docsify-katex.min.js"></script>
+  <link rel="stylesheet" href="docs/vendor/katex/katex.min.css">
+  <script src="docs/vendor/katex/katex.min.js"></script>
+  <script src="docs/vendor/katex/auto-render.min.js"></script>
 
   <!-- AI Sidebar -->
   <div id="ai-sidebar" class="ai-sidebar">
@@ -215,25 +215,25 @@
     <div id="editor-container" class="editor-container"></div>
   </div>
 
-  <!-- CodeMirror 5 -->
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5/lib/codemirror.min.css">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5/theme/one-dark.min.css">
-  <script src="https://cdn.jsdelivr.net/npm/codemirror@5/lib/codemirror.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/codemirror@5/mode/markdown/markdown.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/codemirror@5/mode/gfm/gfm.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/codemirror@5/mode/stex/stex.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/codemirror@5/mode/javascript/javascript.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/codemirror@5/mode/python/python.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/codemirror@5/mode/xml/xml.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/codemirror@5/mode/css/css.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/codemirror@5/addon/mode/overlay.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/codemirror@5/addon/edit/closebrackets.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/codemirror@5/addon/search/search.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/codemirror@5/addon/search/searchcursor.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/codemirror@5/addon/dialog/dialog.min.js"></script>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5/addon/dialog/dialog.min.css">
+  <!-- CodeMirror 5 (本地) -->
+  <link rel="stylesheet" href="docs/vendor/codemirror/codemirror.min.css">
+  <link rel="stylesheet" href="docs/vendor/codemirror/one-dark.min.css">
+  <script src="docs/vendor/codemirror/codemirror.min.js"></script>
+  <script src="docs/vendor/codemirror/markdown.min.js"></script>
+  <script src="docs/vendor/codemirror/gfm.min.js"></script>
+  <script src="docs/vendor/codemirror/stex.min.js"></script>
+  <script src="docs/vendor/codemirror/javascript.min.js"></script>
+  <script src="docs/vendor/codemirror/python.min.js"></script>
+  <script src="docs/vendor/codemirror/xml.min.js"></script>
+  <script src="docs/vendor/codemirror/css.min.js"></script>
+  <script src="docs/vendor/codemirror/overlay.min.js"></script>
+  <script src="docs/vendor/codemirror/closebrackets.min.js"></script>
+  <script src="docs/vendor/codemirror/search.min.js"></script>
+  <script src="docs/vendor/codemirror/searchcursor.min.js"></script>
+  <script src="docs/vendor/codemirror/dialog.min.js"></script>
+  <link rel="stylesheet" href="docs/vendor/codemirror/dialog.min.css">
 
-  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="docs/vendor/js/marked.min.js"></script>
   <script src="docs/js/ai-sidebar.js?v=3"></script>
   <script src="docs/js/editor.js?v=2"></script>
 </body>
