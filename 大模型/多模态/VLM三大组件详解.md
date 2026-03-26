@@ -106,25 +106,37 @@ projector = nn.Sequential(
 
 #### 方法二：Q-Former（BLIP-2 方案）
 
-用一组**可学习的 query token** 通过交叉注意力从视觉特征中"提取"信息：
+本质上就是一个**小型 Transformer Decoder**，输入不是文本 token，而是 32 个**随机初始化的可学习 query embedding**。通过多层堆叠，从 ViT 的视觉特征中"提取"并压缩信息。
+
+每一层的结构和标准 Transformer Decoder Block 一样，包含三个子层：
 
 ```
-可学习 Query (32 个, 每个 768 维)
-    │
-    ├── Self-Attention (query 之间交互)
-    │
-    └── Cross-Attention (query 注意力到 ViT 输出)
-            │
-            ↓
-    压缩后的视觉特征 (32 × 768)
-            │
-    Linear → LLM 输入维度 (32 × LLM_dim)
+输入: 32 个可学习 Query (每个 768 维)
+        │
+        ↓
+┌───────────────────────────────────┐
+│  1. Self-Attention                │  ← 32 个 query 互相 attend
+│     Q=K=V=query                   │    让 query 分工，避免都提取重复信息
+│                                   │
+│  2. Cross-Attention               │  ← query attend 到 ViT 的 576 个 patch 特征
+│     Q=query, K=V=ViT输出          │    从图像中"捞"各自负责的信息
+│                                   │
+│  3. FFN                           │  ← 前馈网络，常规非线性变换
+└───────────────────────────────────┘
+        × L 层堆叠（BLIP-2 中 L=12）
+        │
+        ↓
+压缩后的视觉特征 (32 × 768)
+        │
+  Linear → LLM 输入维度 (32 × LLM_dim)
 ```
+
+**为什么 Self-Attention 在 Cross-Attention 前面？** 类比 32 个记者去采访——先开会分工（Self-Attn: "你问背景，我问细节"），再各自带着不同关注点去采访（Cross-Attn），避免 32 个 query 都提取到差不多的信息。
 
 **特点**：
-- 将数百个视觉 token **压缩到 32 个**，大幅减少计算量
+- 将数百个视觉 token **压缩到固定 32 个**，大幅减少 LLM 端计算量
 - 但可能丢失细粒度信息（OCR、小物体识别变差）
-- 结构复杂，训练需要多阶段
+- 结构较复杂，BLIP-2 原文需要多阶段预训练（ITC/ITM/ITG 三个目标）
 
 #### 方法三：Perceiver Resampler（Flamingo 方案）
 
