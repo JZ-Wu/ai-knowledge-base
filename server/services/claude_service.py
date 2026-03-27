@@ -96,8 +96,7 @@ def stream_chat(
     cmd = [CLAUDE_CLI, "-p", "--verbose", "--output-format", "stream-json"]
     if session_id:
         cmd.extend(["--resume", session_id])
-    if model:
-        cmd.extend(["--model", model])
+    cmd.extend(["--model", model if model else "sonnet"])
     cmd.extend(["--thinking", "enabled" if thinking else "disabled"])
     for f in tmp_files:
         cmd.extend(["--image", f])
