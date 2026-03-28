@@ -236,13 +236,13 @@
   <script src="docs/vendor/codemirror/dialog.min.js"></script>
   <link rel="stylesheet" href="docs/vendor/codemirror/dialog.min.css">
 
+  <script>window._docsifyMarked = window.marked;</script>
   <script src="docs/vendor/js/marked.min.js"></script>
   <script>
-    // 独立 marked 库保存为 markedLib，恢复 Docsify 内置的 marked 供搜索插件使用
+    // standalone marked v15 保存为 markedLib 给 AI sidebar 用
+    // 恢复 Docsify 内置的 marked 供搜索插件 lexer 使用
     window.markedLib = window.marked;
-    if (window.Docsify && window.Docsify.marked) {
-      window.marked = window.Docsify.marked;
-    }
+    window.marked = window._docsifyMarked;
   </script>
   <script src="docs/js/ai-sidebar.js?v=4"></script>
   <script src="docs/js/editor.js?v=2"></script>
