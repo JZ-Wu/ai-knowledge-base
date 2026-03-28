@@ -475,7 +475,8 @@
   }
 
   function renderMarkdown(el, text) {
-    if (typeof marked !== "undefined" && text) {
+    var _marked = window.markedLib || window.marked;
+    if (typeof _marked !== "undefined" && text) {
       // 提取 LaTeX 块，直接渲染为 HTML，避免 marked 和 renderMathInElement 二次解析冲突
       var mathHtmls = [];
       var placeholder = function (raw, display) {
@@ -518,7 +519,7 @@
           return placeholder(m, false);
         });
 
-      var html = marked.parse(safe);
+      var html = _marked.parse(safe);
 
       // 还原已渲染的 KaTeX HTML
       html = html.replace(/\x00MATH(\d+)\x00/g, function (_, idx) {
