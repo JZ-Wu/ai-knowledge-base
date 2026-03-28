@@ -58,9 +58,12 @@
       loadSidebar: '_sidebar.md',
       subMaxLevel: 3,
       search: {
-        placeholder: '搜索...',
+        placeholder: '全文搜索...',
         noData: '没有找到结果',
-        depth: 6
+        paths: 'auto',
+        depth: 6,
+        maxAge: 3600000,
+        hideOtherSidebarContent: true
       },
       auto2top: false,
       relativePath: false,
