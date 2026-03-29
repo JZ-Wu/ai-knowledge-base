@@ -53,7 +53,7 @@
 
 ```
 Stage 1: 预训练对齐 (约 1 epoch)
-├── 数据: 595K 图文描述对 (LAION-CC-SBU 子集)
+├── 数据: 558K 图文描述对 (LCS-558K, LAION-CC-SBU 子集)
 ├── 可训练: 仅投影层 MLP
 ├── 冻结: ViT + LLM
 ├── 目的: 学会将视觉特征映射到 LLM 的语义空间
@@ -105,7 +105,7 @@ Q-Former 结构:
 └── Feed-Forward 层
 
 信息流:
-  ViT 输出 (257×1024) ──Cross-Attention──→ Query (32×768)
+  ViT 输出 (257×1408) ──Cross-Attention──→ Query (32×768)
                                               │
                                         Self-Attention
                                               │
@@ -319,12 +319,12 @@ Token 数计算:
   - 支持 bbox 输入输出（视觉定位）
 ```
 
-### 4.2 Qwen-VL2 (2024)
+### 4.2 Qwen2-VL (2024)
 
 关键改进：**Naive Dynamic Resolution**
 
 ```
-与 InternVL 的动态切片不同，Qwen-VL2 直接处理原始分辨率:
+与 InternVL 的动态切片不同，Qwen2-VL 直接处理原始分辨率:
   - 不切 tile，直接将原始分辨率图像送入 ViT
   - ViT 输出的 token 数随分辨率动态变化
   - 用 2D-RoPE 处理不同分辨率的位置编码
@@ -333,9 +333,9 @@ Token 数计算:
 劣势: 超高分辨率时 token 数可能很多
 ```
 
-### 4.3 Qwen-VL2 的 MoE 变体
+### 4.3 Qwen2-VL 的 MoE 变体
 
-Qwen-VL2-72B 实际使用了 MoE（Mixture of Experts）架构：
+Qwen2-VL-72B 实际使用了 MoE（Mixture of Experts）架构：
 - 总参数 72B，但每次推理只激活约 12B
 - 推理成本远低于同等参数的 Dense 模型
 
@@ -352,7 +352,7 @@ VLM 的先驱之一：
 1. Perceiver Resampler: 注意力池化压缩视觉 token
 2. Gated Cross-Attention: 在 LLM 层间插入交叉注意力层
    - 不同于其他方案把视觉 token 和文本拼接
-   - 而是在 LLM 的每一层都进行视觉-文本交叉注意力
+   - 而是在 LLM 的部分层间隔插入视觉-文本交叉注意力
    - 用可学习的门控参数控制视觉信息的注入强度
 
 3. Few-shot 能力: 支持多图 few-shot（给几个示例图+答案，再问新图）
@@ -403,7 +403,7 @@ VLM 的先驱之一：
 | LLaVA-1.5 | CLIP ViT-L | MLP | Vicuna-13B | 576 | 336px |
 | BLIP-2 | EVA-CLIP ViT-G | Q-Former | FlanT5/Vicuna | 32 | 224px |
 | InternVL2-76B | InternViT-6B | Pixel Shuffle + MLP | InternLM2-76B | 动态 | 动态 tile |
-| Qwen-VL2-72B | ViT-bigG (自训) | MLP | Qwen2-72B (MoE) | 动态 | 原始分辨率 |
+| Qwen2-VL-72B | ViT-bigG (自训) | MLP | Qwen2-72B (MoE) | 动态 | 原始分辨率 |
 | LLaVA-OneVision | SigLIP | MLP | Qwen2-72B | 动态 | 动态 tile |
 | DeepSeek-VL2 | SigLIP | MLP | DeepSeek-MoE | 动态 | 1536px |
 
@@ -414,7 +414,7 @@ VLM 的先驱之一：
          ↓ 训练更多参数效果更好
 2023: 冻结 ViT，训连接器 + LLM (LLaVA)
          ↓ 更大的 ViT 更好
-2024: 全部解冻，端到端训练 (InternVL2, Qwen-VL2)
+2024: 全部解冻，端到端训练 (InternVL2, Qwen2-VL)
          ↓ 下一步？
 2025: 原生多模态预训练？(不再分三个组件)
 ```
