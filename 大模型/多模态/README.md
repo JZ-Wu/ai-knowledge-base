@@ -18,7 +18,7 @@
 <!-- 待添加 -->
 
 ### 视频理解与生成
-<!-- 待添加 -->
+- [视频 VLM 详解](视频VLM详解.md) — Video-ChatGPT、Video-LLaVA、LLaVA-OneVision、Qwen2-VL 视频模式、长视频理解
 
 ---
 [返回上级](../README.md) | [返回总目录](../../README.md)
