@@ -337,12 +337,71 @@ QLoRA:
 
 ### 6.2 推理框架
 
-| 框架 | 特点 |
-|------|------|
-| **vLLM** | PagedAttention，高吞吐，原生支持多种 VLM |
-| **SGLang** | RadixAttention，适合多轮 VLM 对话 |
-| **TensorRT-LLM** | NVIDIA 优化，延迟最低 |
-| **Ollama** | 简单易用，适合本地部署 |
+| 框架 | 特点 | 适用场景 | 上手难度 |
+|------|------|---------|---------|
+| **vLLM** | PagedAttention，高吞吐，原生支持多种 VLM | 线上服务，高并发 | 中等 |
+| **SGLang** | RadixAttention，适合多轮 VLM 对话 | 多轮对话、复杂 prompt 复用 | 中等 |
+| **TensorRT-LLM** | NVIDIA 优化，延迟最低 | 追求极致延迟、已有 NVIDIA 部署体系 | 高 |
+| **Ollama** | 简单易用，适合本地部署 | 本地试玩、个人使用 | 极低 |
+
+**核心瓶颈**：LLM 推理时 KV Cache 占显存过多，长对话/多用户并发时显存很快耗尽，且预分配的连续空间利用率低。
+
+#### vLLM — PagedAttention
+
+```
+核心思想: 像操作系统管理内存一样管理 KV Cache
+
+传统做法:
+  每个请求预分配一大块连续显存放 KV Cache
+  → 请求短的浪费，请求长的可能不够，利用率约 50%
+
+PagedAttention:
+  把 KV Cache 切成小"页"，按需分配，不要求连续
+  → 跟操作系统的虚拟内存分页机制一样
+  → 显存利用率提升到约 95%
+  → 同样的 GPU 能多服务 2-4 倍的并发请求
+```
+
+#### SGLang — RadixAttention
+
+```
+核心思想: 用前缀树缓存已计算的 KV Cache，避免重复计算
+
+场景: 多轮对话每轮都带着完整历史
+  第 1 轮: [系统提示 + 问题1] → 算完，KV Cache 存入 Radix Tree
+  第 2 轮: [系统提示 + 问题1 + 回答1 + 问题2]
+           ^^^^^^^^^^^^^^^^^^^^^^
+           这部分 KV Cache 直接命中缓存，不用重算
+
+→ 多轮对话和共享 system prompt 的场景加速明显
+```
+
+#### TensorRT-LLM — NVIDIA 底层优化
+
+```
+核心思想: 针对 NVIDIA GPU 做硬件级深度优化
+
+三大手段:
+  1. Kernel Fusion: 多个小操作合并为一个 GPU kernel，减少调度开销
+  2. 量化加速: INT8/INT4 使用 Tensor Core 专用硬件，比软件模拟快很多
+  3. 定制 CUDA Kernel: 每个算子针对特定 GPU 架构 (A100/H100) 手动调优
+
+→ 单次推理延迟最低，但需要将模型转为 TensorRT 引擎格式，适配工作量大
+```
+
+#### Ollama — 一行命令跑模型
+
+```
+核心思想: 极致易用性，LLM 的 "Docker"
+
+底层使用 llama.cpp (C++ 推理引擎)
+  $ ollama run llama3    # 自动下载 + 量化 + 运行
+
+→ 支持 CPU 推理，不一定需要 GPU
+→ 性能一般，但谁都能跑，适合本地实验
+```
+
+> **实际使用**：生产环境首选 vLLM（生态好、模型支持广）；需要极致性能上 TensorRT-LLM；本地实验用 Ollama。
 
 ---
 
