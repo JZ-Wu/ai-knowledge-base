@@ -653,6 +653,21 @@ body.editor-open .content {
 }
 
 /* ---- Responsive ---- */
+/* ---- Message edit button ---- */
+.ai-msg.user:hover .ai-msg-edit {
+  display: block !important;
+}
+
+/* ---- Quota bar ---- */
+#ai-quota-bar {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+/* ---- Usage bar ---- */
+#ai-usage-bar {
+  font-family: monospace;
+}
+
 @media (max-width: 900px) {
   .ai-sidebar {
     width: 100vw;

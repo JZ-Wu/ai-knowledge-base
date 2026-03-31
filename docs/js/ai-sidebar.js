@@ -27,6 +27,9 @@
   var imageInput = document.getElementById("ai-image-input");
   var imagePreview = document.getElementById("ai-image-preview");
   var pendingImages = []; // [{base64, media_type}]
+  var quotaBar = document.getElementById("ai-quota-bar");
+  var quotaText = document.getElementById("ai-quota-text");
+  var usageBar = document.getElementById("ai-usage-bar");
 
   // ========== History Persistence ==========
 
@@ -90,6 +93,36 @@
   // 页面加载时恢复历史和模型选择
   loadHistory();
   loadModel();
+
+  // ========== Quota Display ==========
+
+  function fetchQuota() {
+    fetch("/api/rate-limits")
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        var rl = data.rate_limits;
+        if (rl.error) {
+          if (quotaBar) quotaBar.style.display = "none";
+          return;
+        }
+        var parts = [];
+        if (rl.five_hour) parts.push("5h: " + rl.five_hour.used_percentage + "%");
+        if (rl.seven_day) parts.push("7d: " + rl.seven_day.used_percentage + "%");
+        if (parts.length && quotaBar && quotaText) {
+          quotaText.textContent = parts.join(" | ");
+          quotaBar.style.display = "block";
+          // Color coding
+          var maxPct = Math.max(
+            rl.five_hour ? rl.five_hour.used_percentage : 0,
+            rl.seven_day ? rl.seven_day.used_percentage : 0
+          );
+          quotaText.style.color = maxPct > 80 ? "#e53935" : maxPct > 50 ? "#f57c00" : "#888";
+        }
+      })
+      .catch(function() {});
+  }
+
+  fetchQuota();
 
   // ========== A. Text Selection Detection ==========
 
@@ -400,6 +433,27 @@
               }
               fullResponse += "\n\n**Error:** " + data.content;
               renderMarkdown(textContainer, fullResponse);
+            } else if (data.type === "usage") {
+              if (usageBar) {
+                var parts = [];
+                if (data.input_tokens) parts.push("In: " + data.input_tokens);
+                if (data.output_tokens) parts.push("Out: " + data.output_tokens);
+                if (data.cache_read) parts.push("Cache: " + data.cache_read);
+                usageBar.textContent = parts.join(" | ");
+                usageBar.style.display = "block";
+              }
+            } else if (data.type === "duration") {
+              if (usageBar) {
+                usageBar.textContent += " | " + (data.ms / 1000).toFixed(1) + "s";
+              }
+            } else if (data.type === "rate_limit") {
+              // Update quota bar directly from stream event
+              if (quotaBar && quotaText) {
+                var parts = [];
+                if (data.status) parts.push("Status: " + data.status);
+                quotaText.textContent = parts.join(" | ");
+                quotaBar.style.display = "block";
+              }
             }
           } catch (_) {}
         }
@@ -410,6 +464,8 @@
       if (doneThinkEl) doneThinkEl.removeAttribute("open");
       var doneToolEl = toolContainer.querySelector(".ai-tool-block");
       if (doneToolEl) doneToolEl.removeAttribute("open");
+
+      fetchQuota();
 
       chatMessages.push({ role: "assistant", content: fullResponse });
       saveHistory();
@@ -459,10 +515,91 @@
         textEl.textContent = text;
         el.appendChild(textEl);
       }
+      // Edit button (pencil icon)
+      var editBtn = document.createElement("button");
+      editBtn.className = "ai-msg-edit";
+      editBtn.innerHTML = "&#9998;";
+      editBtn.title = "Edit message";
+      editBtn.style.cssText = "position:absolute;top:4px;right:4px;background:none;border:none;color:rgba(255,255,255,0.6);cursor:pointer;font-size:12px;padding:2px 4px;display:none;";
+      el.appendChild(editBtn);
+      el.style.position = "relative";
+
+      el.addEventListener("mouseenter", function() { editBtn.style.display = "block"; });
+      el.addEventListener("mouseleave", function() { editBtn.style.display = "none"; });
+
+      editBtn.addEventListener("click", function() {
+        startEditMessage(el, text);
+      });
     }
     messagesEl.appendChild(el);
     scrollToBottom();
     return el;
+  }
+
+  function startEditMessage(msgEl, originalText) {
+    if (isStreaming) return;
+    var msgIndex = -1;
+    // Find the index of this message in chatMessages
+    var userMsgs = messagesEl.querySelectorAll(".ai-msg.user");
+    var userIdx = Array.from(userMsgs).indexOf(msgEl);
+    if (userIdx < 0) return;
+    // Map user message DOM index to chatMessages index
+    var count = 0;
+    for (var i = 0; i < chatMessages.length; i++) {
+      if (chatMessages[i].role === "user") {
+        if (count === userIdx) { msgIndex = i; break; }
+        count++;
+      }
+    }
+    if (msgIndex < 0) return;
+
+    // Replace content with textarea
+    var textarea = document.createElement("textarea");
+    textarea.value = originalText;
+    textarea.style.cssText = "width:100%;min-height:60px;border:1px solid rgba(255,255,255,0.3);border-radius:6px;padding:6px;font-size:14px;font-family:inherit;background:rgba(255,255,255,0.15);color:#fff;resize:vertical;box-sizing:border-box;";
+
+    // Clear message content but keep structure
+    var children = Array.from(msgEl.children);
+    children.forEach(function(c) { c.style.display = "none"; });
+    msgEl.appendChild(textarea);
+    textarea.focus();
+
+    var hint = document.createElement("div");
+    hint.style.cssText = "font-size:11px;color:rgba(255,255,255,0.5);margin-top:4px;";
+    hint.textContent = "Enter to submit, Escape to cancel";
+    msgEl.appendChild(hint);
+
+    textarea.addEventListener("keydown", function(e) {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        var newText = textarea.value.trim();
+        if (!newText) return;
+        // Remove this message and all subsequent messages
+        chatMessages = chatMessages.slice(0, msgIndex);
+        // Remove DOM elements from this message onward
+        var allMsgs = messagesEl.querySelectorAll(".ai-msg");
+        var startRemove = false;
+        Array.from(allMsgs).forEach(function(m) {
+          if (m === msgEl) startRemove = true;
+          if (startRemove) m.remove();
+        });
+        // Also remove any refresh hints
+        var hints = messagesEl.querySelectorAll(".ai-refresh-hint");
+        hints.forEach(function(h) { h.remove(); });
+        // Reset session since we're replaying
+        sessionId = "";
+        lastSentPagePath = "";
+        // Re-send with edited text
+        inputEl.value = newText;
+        saveHistory();
+        sendMessage();
+      } else if (e.key === "Escape") {
+        // Cancel edit
+        textarea.remove();
+        hint.remove();
+        children.forEach(function(c) { c.style.display = ""; });
+      }
+    });
   }
 
   function showTyping(container) {
@@ -525,7 +662,11 @@
       html = html.replace(/\x00MATH(\d+)\x00/g, function (_, idx) {
         return mathHtmls[parseInt(idx)];
       });
-      el.innerHTML = html;
+      if (typeof DOMPurify !== 'undefined') {
+        el.innerHTML = DOMPurify.sanitize(html, { ADD_TAGS: ['math', 'semantics', 'mrow', 'mi', 'mo', 'mn', 'msup', 'msub', 'mfrac', 'munder', 'mover', 'msqrt', 'mtext', 'annotation'], ADD_ATTR: ['encoding', 'xmlns'] });
+      } else {
+        el.innerHTML = html;
+      }
     } else {
       el.textContent = text;
     }
