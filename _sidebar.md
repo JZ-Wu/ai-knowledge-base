@@ -64,6 +64,7 @@
     - [图像分割详解](/视觉/分割/图像分割详解.md)
   - 3D视觉
     - [3D稀疏卷积](/视觉/3D视觉/3D稀疏卷积.md)
+    - [NeRF详解](/视觉/3D视觉/NeRF详解.md)
     - [3D高斯溅射详解](/视觉/3D视觉/3D高斯溅射详解.md)
     - [Point Transformer详解](/视觉/3D视觉/Point_Transformer详解.md)
 
