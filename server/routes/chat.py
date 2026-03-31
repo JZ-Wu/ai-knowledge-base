@@ -34,6 +34,8 @@ async def chat(request: ChatRequest):
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
             yield f"data: {json.dumps({'type': 'done'})}\n\n"
         except Exception as e:
-            yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
+            import logging
+            logging.error("Chat stream error: %s", e)
+            yield f"data: {json.dumps({'type': 'error', 'content': 'An internal error occurred.'})}\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")

@@ -49,6 +49,9 @@ def read_source(file_path: str) -> str:
 def write_source(file_path: str, content: str) -> Path:
     """写入 markdown 文件，创建 .bak 备份。"""
     resolved = validate_path(file_path)
+    # Only allow writing markdown files
+    if resolved.suffix.lower() != ".md":
+        raise ValueError(f"Only .md files can be edited: {file_path}")
     if not resolved.exists():
         raise FileNotFoundError(f"File not found: {file_path}")
 

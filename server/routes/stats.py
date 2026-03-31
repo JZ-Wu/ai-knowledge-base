@@ -32,3 +32,10 @@ def get_stats():
     _cache["data"] = result
     _cache["ts"] = now
     return result
+
+
+@router.get("/rate-limits")
+async def rate_limits():
+    from server.quota_check import check_quota
+    rl = check_quota()
+    return {"rate_limits": rl}

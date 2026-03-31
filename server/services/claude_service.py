@@ -1,11 +1,12 @@
-import base64
 import json
+import logging
 import os
 import subprocess
-import tempfile
 import threading
 from collections.abc import Generator
 from server.config import CLAUDE_CLI, DOCS_ROOT, MAX_PAGE_CHARS
+
+logger = logging.getLogger(__name__)
 
 # 确保子进程能找到 node (Windows npm 全局安装需要)
 _env = os.environ.copy()
@@ -14,6 +15,15 @@ _nodejs_paths = [
     os.path.join(os.environ.get("APPDATA", ""), "npm"),
 ]
 _env["PATH"] = ";".join(_nodejs_paths) + ";" + _env.get("PATH", "")
+
+_ALLOWED_MODELS = {"claude-sonnet-4-6", "claude-haiku-4-5-20251001", "claude-opus-4-6"}
+
+_SYSTEM_PROMPT = (
+    "你是一个知识库助手，只能读取和编辑 Markdown (.md) 文件。\n"
+    "你不能执行命令、读取配置文件、或修改非 Markdown 文件。\n"
+    "只有当用户明确要求时，才编辑文件。\n"
+    "请用中文回答。"
+)
 
 
 def build_prompt(page_content: str, selected_text: str, messages: list[dict]) -> str:
@@ -65,6 +75,14 @@ def stream_chat(
     - {"type": "result", "content": "..."} — 最终结果
     - {"type": "error", "content": "..."} — 错误
     """
+    # Validate model
+    if model and model not in _ALLOWED_MODELS:
+        model = ""
+
+    # Validate session_id format
+    if session_id and not all(c.isalnum() or c in "-_" for c in session_id):
+        session_id = ""
+
     # 有 session_id 时复用会话，只发最新一条消息，但附带新页面上下文
     if session_id and messages:
         user_msg = messages[-1]["content"]
@@ -82,24 +100,29 @@ def stream_chat(
     else:
         prompt = build_prompt(page_content, selected_text, messages)
 
-    # 将图片写入临时文件
-    tmp_files = []
+    # 将图片嵌入为 data-URI
     if images:
-        ext_map = {"image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif", "image/webp": ".webp"}
+        img_parts = []
         for img in images:
-            ext = ext_map.get(img.get("media_type", ""), ".png")
-            tmp = tempfile.NamedTemporaryFile(suffix=ext, delete=False)
-            tmp.write(base64.b64decode(img["base64"]))
-            tmp.close()
-            tmp_files.append(tmp.name)
+            media = img.get("media_type", "image/png")
+            b64 = img.get("base64", "")
+            if not b64:
+                continue
+            if len(b64) > 1_500_000:  # ~1MB limit
+                continue
+            img_parts.append(f"![image](data:{media};base64,{b64})")
+        if img_parts:
+            prompt = "\n".join(img_parts) + "\n\n" + prompt
+
+    logger.info("Prompt size: %d bytes, images: %d", len(prompt.encode("utf-8")), len(images) if images else 0)
 
     cmd = [CLAUDE_CLI, "-p", "--verbose", "--output-format", "stream-json"]
+    cmd.extend(["--allowedTools", "Read,Edit,Write,Glob,Grep"])
+    cmd.extend(["--system-prompt", _SYSTEM_PROMPT])
     if session_id:
         cmd.extend(["--resume", session_id])
     cmd.extend(["--model", model if model else "sonnet"])
     cmd.extend(["--thinking", "enabled" if thinking else "disabled"])
-    for f in tmp_files:
-        cmd.extend(["--image", f])
 
     proc = subprocess.Popen(
         cmd,
@@ -186,13 +209,6 @@ def stream_chat(
     proc.wait()
     stderr_thread.join(timeout=5)
 
-    # 清理临时图片文件
-    for f in tmp_files:
-        try:
-            os.unlink(f)
-        except OSError:
-            pass
-
     if proc.returncode != 0 and not got_text:
         # resume 失败时自动降级为新会话重试
         if session_id:
@@ -207,4 +223,5 @@ def stream_chat(
             )
             return
         detail = "".join(stderr_chunks).strip() or f"exit code {proc.returncode}"
-        yield {"type": "error", "content": f"Claude CLI error: {detail}"}
+        logger.error("Claude CLI error: %s", detail)
+        yield {"type": "error", "content": "Claude CLI encountered an error. Please try again."}
