@@ -117,7 +117,7 @@ def stream_chat(
     logger.info("Prompt size: %d bytes, images: %d", len(prompt.encode("utf-8")), len(images) if images else 0)
 
     cmd = [CLAUDE_CLI, "-p", "--verbose", "--output-format", "stream-json"]
-    cmd.extend(["--allowedTools", "Read,Edit,Write,Glob,Grep"])
+    cmd.extend(["--allowedTools", "Read,Edit,Write,Glob,Grep,WebSearch,WebFetch"])
     cmd.extend(["--system-prompt", _SYSTEM_PROMPT])
     if session_id:
         cmd.extend(["--resume", session_id])
