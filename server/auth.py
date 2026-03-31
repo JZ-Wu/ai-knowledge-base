@@ -2,6 +2,7 @@
 
 import hashlib
 import hmac
+import pathlib
 import secrets
 
 from fastapi import Request, Response
@@ -10,8 +11,19 @@ from starlette.responses import HTMLResponse, JSONResponse
 
 from server.config import ACCESS_PASSWORD
 
-# 用于签名 cookie 的密钥（每次重启后旧 cookie 失效，需重新登录）
-_SECRET = secrets.token_hex(16)
+# 用于签名 cookie 的密钥（持久化到文件，重启后 cookie 仍有效）
+_SECRET_FILE = pathlib.Path(__file__).parent / ".auth_secret"
+
+
+def _load_or_create_secret() -> str:
+    if _SECRET_FILE.exists():
+        return _SECRET_FILE.read_text().strip()
+    secret = secrets.token_hex(16)
+    _SECRET_FILE.write_text(secret)
+    return secret
+
+
+_SECRET = _load_or_create_secret()
 
 _LOCAL_IPS = {"127.0.0.1", "::1", "localhost"}
 
