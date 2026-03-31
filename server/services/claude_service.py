@@ -52,7 +52,6 @@ def _create_sandbox() -> Path:
         for item in sandbox.iterdir():
             try:
                 if item.is_dir() and not item.is_symlink():
-                    # Junction/目录: rmdir 只移除链接，不删目标内容
                     os.rmdir(str(item))
                 else:
                     item.unlink()
@@ -61,33 +60,40 @@ def _create_sandbox() -> Path:
     else:
         sandbox.mkdir()
 
+    # 收集需要链接的目录和文件
+    dirs_to_link = []
+    files_to_link = []
     for item in DOCS_ROOT.iterdir():
         name = item.name
-        # 跳过敏感项和隐藏文件
         if name in _EXCLUDED_NAMES or name.startswith("."):
             continue
-
-        target = sandbox / name
-
         if item.is_dir():
-            # 目录 → Junction (Windows, 不需管理员) / Symlink (Unix)
-            if is_windows:
-                subprocess.run(
-                    ["cmd", "/c", "mklink", "/J", str(target), str(item)],
-                    capture_output=True, check=False,
-                )
-            else:
-                os.symlink(str(item), str(target))
+            dirs_to_link.append((item, sandbox / name))
         elif item.suffix.lower() == ".md":
-            # .md 文件 → Hard Link（同卷，双向同步，不需管理员）
-            try:
-                os.link(str(item), str(target))
-            except OSError:
-                shutil.copy2(str(item), str(target))
-        # 非 .md 的文件（index.html, run.py 等）→ 不链接
+            files_to_link.append((item, sandbox / name))
+
+    # Windows: 一次 cmd 调用批量创建所有 Junction（避免 N 次子进程）
+    if is_windows and dirs_to_link:
+        batch_cmds = " && ".join(
+            f'mklink /J "{dst}" "{src}"' for src, dst in dirs_to_link
+        )
+        subprocess.run(
+            ["cmd", "/c", batch_cmds],
+            capture_output=True, check=False,
+        )
+    else:
+        for src, dst in dirs_to_link:
+            os.symlink(str(src), str(dst))
+
+    # Hard Link .md 文件
+    for src, dst in files_to_link:
+        try:
+            os.link(str(src), str(dst))
+        except OSError:
+            shutil.copy2(str(src), str(dst))
 
     logger.info("CLI sandbox created at %s with %d items",
-                sandbox, len(list(sandbox.iterdir())))
+                sandbox, len(dirs_to_link) + len(files_to_link))
     return sandbox
 
 
