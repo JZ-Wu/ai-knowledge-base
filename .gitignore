@@ -13,8 +13,9 @@ venv/
 _backup/
 *.bak
 
-# CLI sandbox (auto-generated junctions)
+# CLI sandbox (auto-generated, now at parent dir)
 _cli_sandbox/
+debug_out.txt
 
 # Claude Code
 

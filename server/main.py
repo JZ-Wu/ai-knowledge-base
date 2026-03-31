@@ -13,10 +13,21 @@ _rate_limit: dict[str, list[float]] = {}
 RATE_LIMIT_WINDOW = 60
 RATE_LIMIT_MAX = 30
 
+# 静态文件服务禁止访问的路径前缀（防止泄露敏感文件）
+_BLOCKED_PREFIXES = ("/server/", "/.claude/", "/.git/", "/.github/", "/.env",
+                     "/_cli_sandbox/", "/_backup/", "/__pycache__/")
+
 
 @app.middleware("http")
-async def rate_limit_middleware(request: Request, call_next):
-    if request.url.path.startswith("/api/chat"):
+async def security_middleware(request: Request, call_next):
+    path = request.url.path
+
+    # 阻止访问敏感路径
+    if any(path.startswith(p) or path == p.rstrip("/") for p in _BLOCKED_PREFIXES):
+        return JSONResponse({"error": "Forbidden"}, status_code=403)
+
+    # Rate limiting on chat endpoint
+    if path.startswith("/api/chat"):
         client_ip = request.client.host if request.client else "unknown"
         now = time.time()
         if client_ip not in _rate_limit:
@@ -25,6 +36,7 @@ async def rate_limit_middleware(request: Request, call_next):
         if len(_rate_limit[client_ip]) >= RATE_LIMIT_MAX:
             return JSONResponse({"error": "Rate limit exceeded. Try again later."}, status_code=429)
         _rate_limit[client_ip].append(now)
+
     return await call_next(request)
 
 # 认证中间件（本地免密，局域网需密码）
