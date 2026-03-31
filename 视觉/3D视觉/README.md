@@ -8,7 +8,7 @@
 - [3D稀疏卷积](3D稀疏卷积.md) — Hash Map、Rulebook、Implicit GEMM，点云处理的核心工程实现
 
 ### 3D 表示 (点云 / 体素 / 网格 / NeRF / 3DGS)
-<!-- 待添加 -->
+- [3D高斯溅射详解](3D高斯溅射详解.md) — 3D Gaussian Splatting，显式高斯基元 + 可微光栅化实现实时渲染
 
 ### 深度估计
 <!-- 待添加 -->
