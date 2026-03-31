@@ -13,6 +13,9 @@ venv/
 _backup/
 *.bak
 
+# CLI sandbox (auto-generated junctions)
+_cli_sandbox/
+
 # Claude Code
 
 # OS

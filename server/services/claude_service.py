@@ -1,9 +1,12 @@
 import json
 import logging
 import os
+import platform
+import shutil
 import subprocess
 import threading
 from collections.abc import Generator
+from pathlib import Path
 from server.config import CLAUDE_CLI, DOCS_ROOT, MAX_PAGE_CHARS
 
 logger = logging.getLogger(__name__)
@@ -24,6 +27,76 @@ _SYSTEM_PROMPT = (
     "只有当用户明确要求时，才编辑文件。\n"
     "请用中文回答。"
 )
+
+# ── CLI 沙箱：只暴露知识库内容目录和 .md 文件 ──
+# 敏感目录/文件不会出现在沙箱内，Claude CLI 根本找不到它们
+_EXCLUDED_NAMES = {
+    "server", "docs", ".claude", ".git", ".github",
+    "node_modules", "__pycache__", "_cli_sandbox", "_backup",
+}
+_SANDBOX: Path | None = None
+
+
+def _create_sandbox() -> Path:
+    """创建沙箱工作目录，通过 Junction/Symlink 链接内容目录。
+
+    - 内容目录（大模型/, 强化学习/ 等）→ Junction (Win) / Symlink (Unix)
+    - 根目录 .md 文件（README.md, _sidebar.md）→ Hard Link
+    - server/, docs/, .claude/, .env 等敏感项 → 完全不链接
+    """
+    sandbox = DOCS_ROOT / "_cli_sandbox"
+    is_windows = platform.system() == "Windows"
+
+    # 清理旧沙箱
+    if sandbox.exists():
+        for item in sandbox.iterdir():
+            try:
+                if item.is_dir() and not item.is_symlink():
+                    # Junction/目录: rmdir 只移除链接，不删目标内容
+                    os.rmdir(str(item))
+                else:
+                    item.unlink()
+            except OSError:
+                pass
+    else:
+        sandbox.mkdir()
+
+    for item in DOCS_ROOT.iterdir():
+        name = item.name
+        # 跳过敏感项和隐藏文件
+        if name in _EXCLUDED_NAMES or name.startswith("."):
+            continue
+
+        target = sandbox / name
+
+        if item.is_dir():
+            # 目录 → Junction (Windows, 不需管理员) / Symlink (Unix)
+            if is_windows:
+                subprocess.run(
+                    ["cmd", "/c", "mklink", "/J", str(target), str(item)],
+                    capture_output=True, check=False,
+                )
+            else:
+                os.symlink(str(item), str(target))
+        elif item.suffix.lower() == ".md":
+            # .md 文件 → Hard Link（同卷，双向同步，不需管理员）
+            try:
+                os.link(str(item), str(target))
+            except OSError:
+                shutil.copy2(str(item), str(target))
+        # 非 .md 的文件（index.html, run.py 等）→ 不链接
+
+    logger.info("CLI sandbox created at %s with %d items",
+                sandbox, len(list(sandbox.iterdir())))
+    return sandbox
+
+
+def _get_sandbox() -> Path:
+    """获取或创建沙箱目录（首次调用时创建）。"""
+    global _SANDBOX
+    if _SANDBOX is None:
+        _SANDBOX = _create_sandbox()
+    return _SANDBOX
 
 
 def build_prompt(page_content: str, selected_text: str, messages: list[dict]) -> str:
@@ -124,12 +197,13 @@ def stream_chat(
     cmd.extend(["--model", model if model else "sonnet"])
     cmd.extend(["--thinking", "enabled" if thinking else "disabled"])
 
+    sandbox = _get_sandbox()
     proc = subprocess.Popen(
         cmd,
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        cwd=str(DOCS_ROOT),
+        cwd=str(sandbox),
         env=_env,
     )
 
