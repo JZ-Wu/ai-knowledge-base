@@ -30,3 +30,8 @@ class SuggestEditRequest(BaseModel):
 class ApplyEditRequest(BaseModel):
     file_path: str
     modified_content: str
+
+
+class CompactRequest(BaseModel):
+    session_id: str
+    model: str = "claude-sonnet-4-6"

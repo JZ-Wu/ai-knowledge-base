@@ -30,6 +30,10 @@
   var quotaBar = document.getElementById("ai-quota-bar");
   var quotaText = document.getElementById("ai-quota-text");
   var usageBar = document.getElementById("ai-usage-bar");
+  var contextBar = document.getElementById("ai-context-bar");
+  var contextText = document.getElementById("ai-context-text");
+  var compactBtn = document.getElementById("ai-compact-btn");
+  var lastContextTokens = 0; // 最近一次 input_tokens（近似上下文大小）
 
   // ========== History Persistence ==========
 
@@ -66,6 +70,8 @@
     selectedText = "";
     sessionId = "";
     lastSentPagePath = "";
+    lastContextTokens = 0;
+    updateContextBar();
     sessionStorage.removeItem(STORAGE_KEY);
   }
 
@@ -143,6 +149,101 @@
   }
 
   fetchQuota();
+
+  // ========== Context Usage Display ==========
+
+  // 模型 context window 大小（tokens）
+  var MODEL_CONTEXT = {
+    "claude-opus-4-6": 200000,
+    "claude-sonnet-4-6": 200000,
+    "claude-haiku-4-5-20251001": 200000,
+  };
+
+  function updateContextBar() {
+    if (!contextBar || !contextText) return;
+    if (!lastContextTokens || !sessionId) {
+      contextBar.style.display = "none";
+      return;
+    }
+    var model = modelSelect ? modelSelect.value : "claude-sonnet-4-6";
+    var maxCtx = MODEL_CONTEXT[model] || 200000;
+    var pct = (lastContextTokens / maxCtx * 100).toFixed(1);
+    var kTokens = (lastContextTokens / 1000).toFixed(1);
+    var maxK = (maxCtx / 1000).toFixed(0);
+    contextText.textContent = "Context: " + kTokens + "k / " + maxK + "k (" + pct + "%)";
+    contextBar.style.display = "flex";
+    // 颜色
+    var p = parseFloat(pct);
+    contextText.style.color = p > 80 ? "#e53935" : p > 60 ? "#f57c00" : "#888";
+    // compact 按钮只在有 session 时可用
+    if (compactBtn) compactBtn.disabled = isStreaming;
+  }
+
+  if (compactBtn) {
+    compactBtn.addEventListener("click", function() {
+      if (!sessionId || isStreaming) return;
+      doCompact();
+    });
+  }
+
+  async function doCompact() {
+    if (!sessionId) return;
+    compactBtn.textContent = "Compacting...";
+    compactBtn.disabled = true;
+
+    try {
+      var model = modelSelect ? modelSelect.value : "claude-sonnet-4-6";
+      var response = await fetch("/api/compact", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: sessionId, model: model }),
+      });
+
+      if (!response.ok) throw new Error("Compact failed: " + response.status);
+
+      var reader = response.body.getReader();
+      var decoder = new TextDecoder();
+      var buffer = "";
+
+      while (true) {
+        var result = await reader.read();
+        if (result.done) break;
+        buffer += decoder.decode(result.value, { stream: true });
+        var lines = buffer.split("\n\n");
+        buffer = lines.pop() || "";
+
+        for (var i = 0; i < lines.length; i++) {
+          var line = lines[i];
+          if (!line.startsWith("data: ")) continue;
+          try {
+            var data = JSON.parse(line.slice(6));
+            if (data.type === "session_id") {
+              sessionId = data.session_id;
+              saveHistory();
+            } else if (data.type === "usage") {
+              lastContextTokens = data.input_tokens || 0;
+              updateContextBar();
+            } else if (data.type === "context_compact") {
+              // 压缩成功
+              var noteEl = document.createElement("div");
+              noteEl.className = "ai-refresh-hint";
+              noteEl.textContent = "Context compacted successfully.";
+              messagesEl.appendChild(noteEl);
+              scrollToBottom();
+            }
+          } catch (_) {}
+        }
+      }
+
+      compactBtn.textContent = "Done!";
+      setTimeout(function() { compactBtn.textContent = "Compact"; }, 1500);
+    } catch (err) {
+      compactBtn.textContent = "Failed";
+      setTimeout(function() { compactBtn.textContent = "Compact"; }, 1500);
+    } finally {
+      compactBtn.disabled = false;
+    }
+  }
 
   // ========== A. Text Selection Detection ==========
 
@@ -454,6 +555,9 @@
               fullResponse += "\n\n**Error:** " + data.content;
               renderMarkdown(textContainer, fullResponse);
             } else if (data.type === "usage") {
+              // 更新上下文用量（input_tokens ≈ 当前上下文大小）
+              lastContextTokens = data.input_tokens || 0;
+              updateContextBar();
               if (usageBar) {
                 var total = (data.input_tokens || 0) + (data.output_tokens || 0);
                 var parts = [];
