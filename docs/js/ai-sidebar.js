@@ -154,7 +154,7 @@
 
   // 模型 context window 大小（tokens）
   var MODEL_CONTEXT = {
-    "claude-opus-4-6": 200000,
+    "claude-opus-4-6": 1000000,
     "claude-sonnet-4-6": 200000,
     "claude-haiku-4-5-20251001": 200000,
   };
