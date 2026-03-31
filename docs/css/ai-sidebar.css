@@ -132,8 +132,21 @@ body.ai-sidebar-open .content {
   gap: 12px;
 }
 
-.ai-msg {
+.ai-msg-wrapper {
   max-width: 92%;
+  display: flex;
+  flex-direction: column;
+}
+.ai-msg-wrapper.user {
+  align-self: flex-end;
+  align-items: flex-end;
+}
+.ai-msg-wrapper.assistant {
+  align-self: flex-start;
+  align-items: flex-start;
+}
+
+.ai-msg {
   padding: 10px 14px;
   border-radius: 12px;
   line-height: 1.6;
@@ -141,14 +154,12 @@ body.ai-sidebar-open .content {
 }
 
 .ai-msg.user {
-  align-self: flex-end;
   background: #3F51B5;
   color: #fff;
   border-bottom-right-radius: 4px;
 }
 
 .ai-msg.assistant {
-  align-self: flex-start;
   background: #f0f0f0;
   color: #333;
   border-bottom-left-radius: 4px;
@@ -653,10 +664,6 @@ body.editor-open .content {
 }
 
 /* ---- Responsive ---- */
-/* ---- Message edit button ---- */
-.ai-msg.user:hover .ai-msg-edit {
-  display: block !important;
-}
 
 /* ---- Quota bar ---- */
 #ai-quota-bar {

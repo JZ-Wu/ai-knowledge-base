@@ -669,35 +669,32 @@
         textEl.textContent = text;
         el.appendChild(textEl);
       }
+    }
 
-      // Bottom action bar: left-aligned (copy + edit)
-      var actionBar = document.createElement("div");
-      actionBar.className = "ai-msg-actions";
-      actionBar.style.cssText = "display:flex;justify-content:flex-start;gap:4px;margin-top:4px;opacity:0;transition:opacity 0.15s;";
+    // 外部包装：消息气泡 + 气泡下方的操作栏
+    var wrapper = document.createElement("div");
+    wrapper.className = "ai-msg-wrapper " + role;
 
+    // 操作栏在气泡外面下方
+    var actionBar = document.createElement("div");
+    actionBar.className = "ai-msg-actions";
+    var align = role === "user" ? "flex-end" : "flex-start";
+    actionBar.style.cssText = "display:flex;justify-content:" + align + ";gap:4px;padding:2px 4px 0;opacity:0;transition:opacity 0.15s;min-height:18px;";
+
+    if (role === "user") {
       var copyBtn = createCopyBtn(function() { return text; });
       copyBtn.style.opacity = "1";
-      copyBtn.style.color = "rgba(255,255,255,0.5)";
+      copyBtn.style.color = "#aaa";
       actionBar.appendChild(copyBtn);
 
       var editBtn = document.createElement("button");
       editBtn.className = "ai-msg-edit";
       editBtn.innerHTML = "&#9998;";
       editBtn.title = "Edit";
-      editBtn.style.cssText = "background:none;border:none;color:rgba(255,255,255,0.5);cursor:pointer;font-size:11px;padding:1px 4px;";
+      editBtn.style.cssText = "background:none;border:none;color:#aaa;cursor:pointer;font-size:11px;padding:1px 4px;";
       editBtn.addEventListener("click", function() { startEditMessage(el, text); });
       actionBar.appendChild(editBtn);
-
-      el.appendChild(actionBar);
-      el.addEventListener("mouseenter", function() { actionBar.style.opacity = "1"; });
-      el.addEventListener("mouseleave", function() { actionBar.style.opacity = "0"; });
-
     } else {
-      // Assistant: bottom action bar, right-aligned (copy)
-      var actionBar = document.createElement("div");
-      actionBar.className = "ai-msg-actions";
-      actionBar.style.cssText = "display:flex;justify-content:flex-end;gap:4px;margin-top:4px;opacity:0;transition:opacity 0.15s;";
-
       var copyBtn = createCopyBtn(function() {
         var assistantEls = messagesEl.querySelectorAll(".ai-msg.assistant");
         var elIdx = Array.from(assistantEls).indexOf(el);
@@ -712,11 +709,14 @@
       });
       copyBtn.style.opacity = "1";
       actionBar.appendChild(copyBtn);
-
-      el.appendChild(actionBar);
-      el.addEventListener("mouseenter", function() { actionBar.style.opacity = "1"; });
-      el.addEventListener("mouseleave", function() { actionBar.style.opacity = "0"; });
     }
+
+    wrapper.appendChild(el);
+    wrapper.appendChild(actionBar);
+    wrapper.addEventListener("mouseenter", function() { actionBar.style.opacity = "1"; });
+    wrapper.addEventListener("mouseleave", function() { actionBar.style.opacity = "0"; });
+
+    messagesEl.appendChild(wrapper);
 
     messagesEl.appendChild(el);
     scrollToBottom();
