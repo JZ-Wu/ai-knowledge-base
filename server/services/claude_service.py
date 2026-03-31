@@ -114,12 +114,35 @@ def _create_sandbox() -> Path:
     return sandbox
 
 
-def _get_sandbox() -> Path:
-    """获取或创建沙箱目录（首次调用时创建）。"""
+def _sync_back(sandbox: Path):
+    """将沙箱中新建/修改的 .md 文件同步回 DOCS_ROOT。
+
+    硬链接文件的修改自动同步，但新建的文件只存在于沙箱，需要复制回去。
+    """
+    count = 0
+    for md_file in sandbox.rglob("*.md"):
+        rel = md_file.relative_to(sandbox)
+        # 安全检查：不允许路径穿越
+        if ".." in str(rel):
+            continue
+        target = DOCS_ROOT / rel
+        if not target.exists():
+            # 新文件：复制回 DOCS_ROOT
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(str(md_file), str(target))
+            count += 1
+            logger.info("Synced new file back: %s", rel)
+    if count:
+        logger.info("Synced %d new file(s) from sandbox to DOCS_ROOT", count)
+
+
+def _refresh_sandbox():
+    """重建沙箱，确保包含最新的 DOCS_ROOT 文件。"""
     global _SANDBOX
-    if _SANDBOX is None:
-        _SANDBOX = _create_sandbox()
+    _SANDBOX = _create_sandbox()
     return _SANDBOX
+
+
 
 
 def build_prompt(page_content: str, selected_text: str, messages: list[dict]) -> str:
@@ -220,7 +243,7 @@ def stream_chat(
     cmd.extend(["--model", model if model else "sonnet"])
     cmd.extend(["--thinking", "enabled" if thinking else "disabled"])
 
-    sandbox = _get_sandbox()
+    sandbox = _refresh_sandbox()
     proc = subprocess.Popen(
         cmd,
         stdin=subprocess.PIPE,
@@ -386,3 +409,8 @@ def stream_chat(
         if proc.poll() is None:
             proc.kill()
             proc.wait(timeout=5)
+        # 将沙箱中新建的 .md 文件同步回知识库原目录
+        try:
+            _sync_back(sandbox)
+        except Exception as e:
+            logger.warning("Sandbox sync-back failed: %s", e)
