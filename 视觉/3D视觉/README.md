@@ -7,6 +7,9 @@
 ### 3D 工程
 - [3D稀疏卷积](3D稀疏卷积.md) — Hash Map、Rulebook、Implicit GEMM，点云处理的核心工程实现
 
+### 点云理解
+- [Point Transformer详解](Point_Transformer详解.md) — Vector Attention、序列化注意力、空间填充曲线，PTv1/v2/v3 系列
+
 ### 3D 表示 (点云 / 体素 / 网格 / NeRF / 3DGS)
 - [3D高斯溅射详解](3D高斯溅射详解.md) — 3D Gaussian Splatting，显式高斯基元 + 可微光栅化实现实时渲染
 

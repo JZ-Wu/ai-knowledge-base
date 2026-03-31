@@ -21,6 +21,7 @@
 ### [3D 视觉](3D视觉/README.md)
 3D 数据处理、表示与理解
 - [3D稀疏卷积](3D视觉/3D稀疏卷积.md) — Hash Map、Rulebook、Implicit GEMM
+- [Point Transformer详解](3D视觉/Point_Transformer详解.md) — PTv1/v2/v3，向量注意力与序列化注意力
 
 ---
 [返回总目录](../README.md)
