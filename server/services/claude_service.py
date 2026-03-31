@@ -115,25 +115,39 @@ def _create_sandbox() -> Path:
 
 
 def _sync_back(sandbox: Path):
-    """将沙箱中新建/修改的 .md 文件同步回 DOCS_ROOT。
+    """将沙箱中新建或被修改的 .md 文件同步回 DOCS_ROOT。
 
-    硬链接文件的修改自动同步，但新建的文件只存在于沙箱，需要复制回去。
+    硬链接在文件被"写新文件+重命名"方式编辑时会断开（inode 变化），
+    因此不能只同步新文件，必须检测所有内容差异并回写。
     """
     count = 0
     for md_file in sandbox.rglob("*.md"):
         rel = md_file.relative_to(sandbox)
-        # 安全检查：不允许路径穿越
         if ".." in str(rel):
             continue
         target = DOCS_ROOT / rel
-        if not target.exists():
-            # 新文件：复制回 DOCS_ROOT
+        try:
+            sandbox_content = md_file.read_bytes()
+        except OSError:
+            continue
+        if target.exists():
+            try:
+                if target.read_bytes() == sandbox_content:
+                    continue  # 内容一致，无需同步（硬链接仍有效）
+            except OSError:
+                pass
+            # 内容不同：硬链接已断开，覆盖回去
+            shutil.copy2(str(md_file), str(target))
+            count += 1
+            logger.info("Synced modified file back: %s", rel)
+        else:
+            # 新文件
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(str(md_file), str(target))
             count += 1
             logger.info("Synced new file back: %s", rel)
     if count:
-        logger.info("Synced %d new file(s) from sandbox to DOCS_ROOT", count)
+        logger.info("Synced %d file(s) from sandbox to DOCS_ROOT", count)
 
 
 def _refresh_sandbox():
