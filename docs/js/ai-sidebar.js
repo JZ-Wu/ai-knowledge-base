@@ -221,7 +221,7 @@
               sessionId = data.session_id;
               saveHistory();
             } else if (data.type === "usage") {
-              lastContextTokens = data.input_tokens || 0;
+              lastContextTokens = (data.input_tokens || 0) + (data.cache_read || 0) + (data.cache_create || 0);
               updateContextBar();
             } else if (data.type === "context_compact") {
               // 压缩成功
@@ -555,8 +555,8 @@
               fullResponse += "\n\n**Error:** " + data.content;
               renderMarkdown(textContainer, fullResponse);
             } else if (data.type === "usage") {
-              // 更新上下文用量（input_tokens ≈ 当前上下文大小）
-              lastContextTokens = data.input_tokens || 0;
+              // 上下文 ≈ input_tokens + cache_read + cache_create（总发送量）
+              lastContextTokens = (data.input_tokens || 0) + (data.cache_read || 0) + (data.cache_create || 0);
               updateContextBar();
               if (usageBar) {
                 var total = (data.input_tokens || 0) + (data.output_tokens || 0);
