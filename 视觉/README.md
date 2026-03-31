@@ -6,6 +6,7 @@
 
 ### [表示学习](表示学习/README.md)
 视觉基础模型与自监督学习
+- [ViT详解](表示学习/ViT详解.md) — ViT、DeiT、Swin Transformer
 - [对比学习与CLIP详解](表示学习/对比学习与CLIP详解.md) — SimCLR、MoCo、CLIP、SigLIP
 - [DINO详解](表示学习/DINO详解.md) — 自蒸馏、DINOv1/v2、涌现特性
 

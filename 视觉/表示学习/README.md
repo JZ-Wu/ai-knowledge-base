@@ -4,6 +4,7 @@
 
 ## 知识点索引
 
+- [ViT详解](ViT详解.md) — ViT、DeiT、Swin Transformer，视觉 Transformer 系列
 - [对比学习与CLIP详解](对比学习与CLIP详解.md) — 对比学习范式（SimCLR、MoCo）、CLIP、SigLIP
 - [DINO详解](DINO详解.md) — 自蒸馏、DINOv1/v2、视觉特征的涌现特性
 
