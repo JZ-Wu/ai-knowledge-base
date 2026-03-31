@@ -272,10 +272,31 @@ def stream_chat(
                                 "file": file_path,
                             }
 
+            elif event_type == "rate_limit_event":
+                info = event.get("rate_limit_info", {})
+                yield {
+                    "type": "rate_limit",
+                    "status": info.get("status", ""),
+                    "resets_at": info.get("resetsAt", 0),
+                    "limit_type": info.get("rateLimitType", ""),
+                }
+
             elif event_type == "result":
                 result_text = event.get("result", "")
                 if result_text and not got_text:
                     yield {"type": "text", "content": result_text}
+                usage = event.get("usage", {})
+                if usage:
+                    yield {
+                        "type": "usage",
+                        "input_tokens": usage.get("input_tokens", 0),
+                        "output_tokens": usage.get("output_tokens", 0),
+                        "cache_read": usage.get("cache_read_input_tokens", 0),
+                        "cache_create": usage.get("cache_creation_input_tokens", 0),
+                    }
+                duration = event.get("duration_ms", 0)
+                if duration:
+                    yield {"type": "duration", "ms": duration}
 
         except json.JSONDecodeError:
             continue

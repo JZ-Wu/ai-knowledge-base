@@ -96,6 +96,21 @@
 
   // ========== Quota Display ==========
 
+  function formatResetTime(ts) {
+    if (!ts) return "";
+    var d = new Date(ts * 1000);
+    var now = new Date();
+    var diffMs = d - now;
+    if (diffMs <= 0) return "now";
+    var diffMin = Math.floor(diffMs / 60000);
+    if (diffMin < 60) return diffMin + "m";
+    var diffH = Math.floor(diffMin / 60);
+    var remainMin = diffMin % 60;
+    if (diffH < 24) return diffH + "h" + (remainMin > 0 ? remainMin + "m" : "");
+    var diffD = Math.floor(diffH / 24);
+    return diffD + "d" + (diffH % 24) + "h";
+  }
+
   function fetchQuota() {
     fetch("/api/rate-limits")
       .then(function(r) { return r.json(); })
@@ -106,12 +121,17 @@
           return;
         }
         var parts = [];
-        if (rl.five_hour) parts.push("5h: " + rl.five_hour.used_percentage + "%");
-        if (rl.seven_day) parts.push("7d: " + rl.seven_day.used_percentage + "%");
+        if (rl.five_hour) {
+          var reset5 = formatResetTime(rl.five_hour.resets_at);
+          parts.push("5h: " + rl.five_hour.used_percentage + "%" + (reset5 ? " (" + reset5 + ")" : ""));
+        }
+        if (rl.seven_day) {
+          var reset7 = formatResetTime(rl.seven_day.resets_at);
+          parts.push("7d: " + rl.seven_day.used_percentage + "%" + (reset7 ? " (" + reset7 + ")" : ""));
+        }
         if (parts.length && quotaBar && quotaText) {
           quotaText.textContent = parts.join(" | ");
           quotaBar.style.display = "block";
-          // Color coding
           var maxPct = Math.max(
             rl.five_hour ? rl.five_hour.used_percentage : 0,
             rl.seven_day ? rl.seven_day.used_percentage : 0
@@ -435,10 +455,12 @@
               renderMarkdown(textContainer, fullResponse);
             } else if (data.type === "usage") {
               if (usageBar) {
+                var total = (data.input_tokens || 0) + (data.output_tokens || 0);
                 var parts = [];
-                if (data.input_tokens) parts.push("In: " + data.input_tokens);
-                if (data.output_tokens) parts.push("Out: " + data.output_tokens);
-                if (data.cache_read) parts.push("Cache: " + data.cache_read);
+                parts.push("Tokens: " + total.toLocaleString());
+                parts.push("In: " + (data.input_tokens || 0).toLocaleString());
+                parts.push("Out: " + (data.output_tokens || 0).toLocaleString());
+                if (data.cache_read) parts.push("Cache: " + data.cache_read.toLocaleString());
                 usageBar.textContent = parts.join(" | ");
                 usageBar.style.display = "block";
               }
@@ -447,12 +469,15 @@
                 usageBar.textContent += " | " + (data.ms / 1000).toFixed(1) + "s";
               }
             } else if (data.type === "rate_limit") {
-              // Update quota bar directly from stream event
               if (quotaBar && quotaText) {
-                var parts = [];
-                if (data.status) parts.push("Status: " + data.status);
-                quotaText.textContent = parts.join(" | ");
-                quotaBar.style.display = "block";
+                var resetStr = data.resets_at ? formatResetTime(data.resets_at) : "";
+                var info = data.status || "";
+                if (resetStr) info += (info ? " | " : "") + "Reset: " + resetStr;
+                if (info) {
+                  quotaText.textContent = info;
+                  quotaBar.style.display = "block";
+                  quotaText.style.color = data.status === "rate_limited" ? "#e53935" : "#888";
+                }
               }
             }
           } catch (_) {}
