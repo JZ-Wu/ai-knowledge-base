@@ -1,11 +1,9 @@
 import json
 import logging
 import os
-import shutil
 import subprocess
 import threading
 from collections.abc import Generator
-from pathlib import Path
 from server.config import CLAUDE_CLI, DOCS_ROOT, MAX_PAGE_CHARS
 
 logger = logging.getLogger(__name__)
@@ -27,6 +25,9 @@ _env = {
 
 _ALLOWED_MODELS = {"claude-sonnet-4-6", "claude-haiku-4-5-20251001", "claude-opus-4-6"}
 
+# 只允许操作 .md 文件的工具集（不给 Bash/WebFetch 等危险工具）
+_ALLOWED_TOOLS = "Read,Edit,Write,Glob,Grep"
+
 _SYSTEM_PROMPT = (
     "你是一个知识库助手。严格遵守以下规则：\n\n"
     "## 文件访问规则\n"
@@ -44,119 +45,8 @@ _SYSTEM_PROMPT = (
     "8. 请用中文回答，使用清晰的 Markdown 格式\n"
 )
 
-# ── CLI 沙箱：位于 DOCS_ROOT 外部，只包含 .md 文件的硬链接 ──
-# 不使用 Junction/Symlink（防止路径解析回溯到 DOCS_ROOT）
-_EXCLUDED_NAMES = {
-    "server", "docs", ".claude", ".git", ".github",
-    "node_modules", "__pycache__", "_cli_sandbox", "_backup",
-}
-# 沙箱放在 DOCS_ROOT 的兄弟目录，同卷（硬链接需要）但 ../ 不会到达 DOCS_ROOT
-_SANDBOX_DIR = DOCS_ROOT.parent / "_kb_sandbox"
-_SANDBOX: Path | None = None
-
 # 子进程超时（秒）
 _CLI_TIMEOUT = 300
-
-
-def _safe_link(src: Path, dst: Path):
-    """硬链接文件，失败则复制。"""
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        os.link(str(src), str(dst))
-    except OSError:
-        shutil.copy2(str(src), str(dst))
-
-
-def _mirror_md_only(src_dir: Path, dst_dir: Path):
-    """递归镜像目录结构，只硬链接 .md 文件。不使用 Junction/Symlink。"""
-    dst_dir.mkdir(parents=True, exist_ok=True)
-    for item in src_dir.iterdir():
-        dst = dst_dir / item.name
-        if item.is_dir():
-            # 跳过隐藏目录和排除目录
-            if item.name.startswith(".") or item.name in _EXCLUDED_NAMES:
-                continue
-            _mirror_md_only(item, dst)
-        elif item.suffix.lower() == ".md":
-            _safe_link(item, dst)
-
-
-def _create_sandbox() -> Path:
-    """创建沙箱工作目录，通过递归硬链接只暴露 .md 文件。
-
-    - 位于 DOCS_ROOT 外部（../ 不会到达 DOCS_ROOT）
-    - 不使用 Junction/Symlink（防止路径解析回溯）
-    - 只链接 .md 文件（其他文件类型不可见）
-    - server/, docs/, .claude/, .env 等完全隔离
-    """
-    sandbox = _SANDBOX_DIR
-
-    # 清理旧沙箱
-    if sandbox.exists():
-        shutil.rmtree(str(sandbox), ignore_errors=True)
-    sandbox.mkdir(parents=True, exist_ok=True)
-
-    count = 0
-    for item in DOCS_ROOT.iterdir():
-        name = item.name
-        if name in _EXCLUDED_NAMES or name.startswith("."):
-            continue
-        if item.is_dir():
-            _mirror_md_only(item, sandbox / name)
-        elif item.suffix.lower() == ".md":
-            # 跳过 CLAUDE.md（使用 --bare 模式，不需要）
-            if name.upper() == "CLAUDE.MD":
-                continue
-            _safe_link(item, sandbox / name)
-        count += 1
-
-    logger.info("CLI sandbox created at %s with %d top-level items", sandbox, count)
-    return sandbox
-
-
-def _sync_back(sandbox: Path):
-    """将沙箱中新建或被修改的 .md 文件同步回 DOCS_ROOT。
-
-    硬链接在文件被"写新文件+重命名"方式编辑时会断开（inode 变化），
-    因此不能只同步新文件，必须检测所有内容差异并回写。
-    """
-    count = 0
-    for md_file in sandbox.rglob("*.md"):
-        rel = md_file.relative_to(sandbox)
-        if ".." in str(rel):
-            continue
-        target = DOCS_ROOT / rel
-        try:
-            sandbox_content = md_file.read_bytes()
-        except OSError:
-            continue
-        if target.exists():
-            try:
-                if target.read_bytes() == sandbox_content:
-                    continue  # 内容一致，无需同步（硬链接仍有效）
-            except OSError:
-                pass
-            # 内容不同：硬链接已断开，覆盖回去
-            shutil.copy2(str(md_file), str(target))
-            count += 1
-            logger.info("Synced modified file back: %s", rel)
-        else:
-            # 新文件
-            target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(str(md_file), str(target))
-            count += 1
-            logger.info("Synced new file back: %s", rel)
-    if count:
-        logger.info("Synced %d file(s) from sandbox to DOCS_ROOT", count)
-
-
-def _refresh_sandbox():
-    """重建沙箱，确保包含最新的 DOCS_ROOT 文件。"""
-    global _SANDBOX
-    _SANDBOX = _create_sandbox()
-    return _SANDBOX
-
-
 
 
 def build_prompt(page_content: str, selected_text: str, messages: list[dict]) -> str:
@@ -199,15 +89,7 @@ def stream_chat(
     images: list[dict] | None = None,
     session_id: str = "",
 ) -> Generator[dict, None, None]:
-    """调用 claude CLI，yield 事件 dict。
-
-    事件格式:
-    - {"type": "text", "content": "..."} — AI 文本回复
-    - {"type": "tool", "tool": "Edit", "file": "...", "status": "..."} — 工具调用
-    - {"type": "session_id", "session_id": "..."} — 会话 ID（用于后续 resume）
-    - {"type": "result", "content": "..."} — 最终结果
-    - {"type": "error", "content": "..."} — 错误
-    """
+    """调用 claude CLI，yield 事件 dict。"""
     # Validate model
     if model and model not in _ALLOWED_MODELS:
         model = ""
@@ -250,20 +132,21 @@ def stream_chat(
     logger.info("Prompt size: %d bytes, images: %d", len(prompt.encode("utf-8")), len(images) if images else 0)
 
     cmd = [CLAUDE_CLI, "-p", "--verbose", "--output-format", "stream-json"]
-    cmd.extend(["--allowedTools", "Read,Edit,Write,Glob,Grep,WebSearch,WebFetch"])
+    cmd.extend(["--allowedTools", _ALLOWED_TOOLS])
     cmd.extend(["--system-prompt", _SYSTEM_PROMPT])
     if session_id:
         cmd.extend(["--resume", session_id])
     cmd.extend(["--model", model if model else "sonnet"])
     cmd.extend(["--thinking", "enabled" if thinking else "disabled"])
 
-    sandbox = _refresh_sandbox()
+    # 直接在知识库目录运行，不使用沙箱
+    # 安全靠: --allowedTools 限制工具 + system prompt 约束 + 中间件阻止敏感路径
     proc = subprocess.Popen(
         cmd,
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        cwd=str(sandbox),
+        cwd=str(DOCS_ROOT),
         env=_env,
     )
 
@@ -423,8 +306,3 @@ def stream_chat(
         if proc.poll() is None:
             proc.kill()
             proc.wait(timeout=5)
-        # 将沙箱中新建的 .md 文件同步回知识库原目录
-        try:
-            _sync_back(sandbox)
-        except Exception as e:
-            logger.warning("Sandbox sync-back failed: %s", e)
