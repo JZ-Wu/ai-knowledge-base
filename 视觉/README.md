@@ -9,6 +9,7 @@
 - [ViT详解](表示学习/ViT详解.md) — ViT、DeiT、Swin Transformer
 - [对比学习与CLIP详解](表示学习/对比学习与CLIP详解.md) — SimCLR、MoCo、CLIP、SigLIP
 - [DINO详解](表示学习/DINO详解.md) — 自蒸馏、DINOv1/v2、涌现特性
+- [MAE详解](表示学习/MAE详解.md) — 掩码自编码器，自监督预训练
 
 ### [生成模型](生成模型/README.md)
 从 VAE 到 Stable Diffusion 到 Flow Matching
@@ -29,6 +30,8 @@
 ### [3D 视觉](3D视觉/README.md)
 3D 数据处理、表示与理解
 - [3D稀疏卷积](3D视觉/3D稀疏卷积.md) — Hash Map、Rulebook、Implicit GEMM
+- [NeRF详解](3D视觉/NeRF详解.md) — 神经辐射场，体渲染方程，Instant-NGP 加速
+- [3D高斯溅射详解](3D视觉/3D高斯溅射详解.md) — 显式高斯基元 + 可微光栅化，实时渲染
 - [Point Transformer详解](3D视觉/Point_Transformer详解.md) — PTv1/v2/v3，向量注意力与序列化注意力
 
 ---
