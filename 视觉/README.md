@@ -1,6 +1,6 @@
 # 视觉
 
-计算机视觉：表示学习、生成模型与 3D 视觉。
+计算机视觉：表示学习、生成模型、目标检测与 3D 视觉。
 
 ## 知识方向索引
 
@@ -17,6 +17,10 @@
 - [采样加速与条件生成](生成模型/采样加速与条件生成.md) — DDIM、CFG、Consistency Models
 - [Stable Diffusion 详解](生成模型/Stable_Diffusion详解.md) — LDM 架构、ControlNet、各版本对比
 - [Flow Matching 详解](生成模型/Flow_Matching详解.md) — 条件 FM、Rectified Flow、SD3/FLUX
+
+### [目标检测](目标检测/README.md)
+从 R-CNN 到 DETR 的完整演进
+- [目标检测详解](目标检测/目标检测详解.md) — 两阶段/单阶段/Transformer 检测器全面梳理
 
 ### [3D 视觉](3D视觉/README.md)
 3D 数据处理、表示与理解
