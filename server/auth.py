@@ -1,32 +1,152 @@
-"""简单的密码认证中间件：本地访问免密，局域网访问需要密码。"""
+"""统一安全中间件：路径防护 + 速率限制 + 密码认证，合并为单一中间件保证执行顺序。"""
 
 import hashlib
 import hmac
+import os
 import pathlib
+import re
 import secrets
+import time
+import urllib.parse
 
-from fastapi import Request, Response
+from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import HTMLResponse, JSONResponse
 
 from server.config import ACCESS_PASSWORD
 
-# 用于签名 cookie 的密钥（持久化到文件，重启后 cookie 仍有效）
+# ── Cookie 签名密钥（持久化，重启后 cookie 仍有效）──
 _SECRET_FILE = pathlib.Path(__file__).parent / ".auth_secret"
 
 
 def _load_or_create_secret() -> str:
     if _SECRET_FILE.exists():
-        return _SECRET_FILE.read_text().strip()
-    secret = secrets.token_hex(16)
+        secret = _SECRET_FILE.read_text().strip()
+        if len(secret) >= 32:
+            return secret
+    secret = secrets.token_hex(32)  # 256-bit
     _SECRET_FILE.write_text(secret)
+    try:
+        os.chmod(str(_SECRET_FILE), 0o600)
+    except OSError:
+        pass
     return secret
 
 
 _SECRET = _load_or_create_secret()
 
-_LOCAL_IPS = {"127.0.0.1", "::1", "localhost"}
+# 只信任直连 socket IP，绝不信任 X-Forwarded-For
+_LOCAL_IPS = frozenset({"127.0.0.1", "::1"})
 
+# ── 路径安全 ──
+_BLOCKED_PREFIXES = (
+    "/server/", "/.claude/", "/.git/", "/.github/", "/.env",
+    "/_cli_sandbox/", "/_backup/", "/__pycache__/", "/.auth_secret",
+    "/.venv/", "/venv/", "/.vscode/", "/.idea/",
+)
+_DANGEROUS_CHARS = re.compile(r"[\x00-\x1f\x7f]")
+
+
+def _normalize_path(raw: str) -> str | None:
+    """全面规范化 URL 路径。返回小写路径，含危险内容返回 None。"""
+    if _DANGEROUS_CHARS.search(raw):
+        return None
+    # 双重 URL 解码（防 %252F 等双重编码）
+    decoded = urllib.parse.unquote(urllib.parse.unquote(raw))
+    if _DANGEROUS_CHARS.search(decoded):
+        return None
+    # 反斜杠 → 正斜杠（Windows）
+    decoded = decoded.replace("\\", "/")
+    # 折叠连续斜杠
+    while "//" in decoded:
+        decoded = decoded.replace("//", "/")
+    # 解析 . 和 ..
+    parts = decoded.split("/")
+    resolved: list[str] = []
+    for p in parts:
+        if p in ("", "."):
+            continue
+        elif p == "..":
+            if resolved:
+                resolved.pop()
+        else:
+            resolved.append(p)
+    normalized = "/" + "/".join(resolved)
+    return normalized.lower()
+
+
+def _is_path_blocked(path: str) -> bool:
+    """检查规范化后的路径是否被禁止。"""
+    for prefix in _BLOCKED_PREFIXES:
+        if path.startswith(prefix) or path == prefix.rstrip("/"):
+            return True
+    # 阻止 .py/.pyc 文件
+    if path.endswith(".py") or path.endswith(".pyc"):
+        return True
+    # 阻止所有隐藏文件/目录（/. 开头的段）
+    if "/." in path:
+        return True
+    return False
+
+
+# ── Token 生成与验证（时序安全）──
+def _make_token(password: str) -> str:
+    """基于密码和密钥生成认证 token（完整 HMAC-SHA256）。"""
+    return hmac.new(_SECRET.encode(), password.encode(), hashlib.sha256).hexdigest()
+
+
+def verify_token(token: str) -> bool:
+    """常量时间验证 token，防止时序攻击。"""
+    if not token or not ACCESS_PASSWORD:
+        return False
+    return hmac.compare_digest(token, _make_token(ACCESS_PASSWORD))
+
+
+def verify_password(candidate: str) -> bool:
+    """常量时间验证密码，防止时序攻击。"""
+    if not candidate or not ACCESS_PASSWORD:
+        return False
+    return hmac.compare_digest(candidate, ACCESS_PASSWORD)
+
+
+# ── 速率限制 ──
+_chat_rate: dict[str, list[float]] = {}
+_login_rate: dict[str, list[float]] = {}
+_MAX_TRACKED_IPS = 10000
+
+CHAT_RATE_WINDOW = 60
+CHAT_RATE_MAX = 30
+LOGIN_RATE_WINDOW = 300   # 5 分钟
+LOGIN_RATE_MAX = 5        # 最多 5 次
+
+
+def _check_rate(store: dict, ip: str, window: int, limit: int) -> bool:
+    """返回 True 表示被限制。"""
+    now = time.time()
+    # 防内存泄漏
+    if len(store) > _MAX_TRACKED_IPS:
+        expired = [k for k, v in store.items() if not v or now - v[-1] > window]
+        for k in expired:
+            del store[k]
+    if ip not in store:
+        store[ip] = []
+    store[ip] = [t for t in store[ip] if now - t < window]
+    if len(store[ip]) >= limit:
+        return True
+    store[ip].append(now)
+    return False
+
+
+# ── 本地判断 ──
+def _is_local(request: Request) -> bool:
+    """只看直连 socket IP，绝不信任代理头。"""
+    client = request.client
+    if not client:
+        return False
+    return client.host in _LOCAL_IPS
+
+
+# ── 登录页 ──
 LOGIN_PAGE = """<!DOCTYPE html>
 <html>
 <head>
@@ -86,39 +206,47 @@ document.getElementById('f').onsubmit = function(e) {
 </html>"""
 
 
-def _make_token(password: str) -> str:
-    """基于密码和密钥生成认证 token。"""
-    return hmac.new(_SECRET.encode(), password.encode(), hashlib.sha256).hexdigest()[:32]
+# ── 统一安全中间件 ──
+class SecurityMiddleware(BaseHTTPMiddleware):
+    """合并路径防护 + 速率限制 + 认证，保证执行顺序。"""
 
-
-def _is_local(request: Request) -> bool:
-    """判断请求是否来自本机。"""
-    client = request.client
-    if not client:
-        return False
-    return client.host in _LOCAL_IPS
-
-
-class AuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
-        # 未设置密码 → 全部放行
+        # 1. 路径规范化与安全检查
+        normalized = _normalize_path(request.url.path)
+        if normalized is None:
+            return JSONResponse({"error": "Bad request"}, status_code=400)
+        if _is_path_blocked(normalized):
+            return JSONResponse({"error": "Forbidden"}, status_code=403)
+
+        # 2. 速率限制
+        client_ip = request.client.host if request.client else "unknown"
+        if normalized == "/api/login":
+            if _check_rate(_login_rate, client_ip, LOGIN_RATE_WINDOW, LOGIN_RATE_MAX):
+                return JSONResponse(
+                    {"error": "Too many login attempts. Try again later."},
+                    status_code=429,
+                    headers={"Retry-After": str(LOGIN_RATE_WINDOW)},
+                )
+        elif normalized.startswith("/api/chat"):
+            if _check_rate(_chat_rate, client_ip, CHAT_RATE_WINDOW, CHAT_RATE_MAX):
+                return JSONResponse(
+                    {"error": "Rate limit exceeded. Try again later."},
+                    status_code=429,
+                )
+
+        # 3. 认证
         if not ACCESS_PASSWORD:
             return await call_next(request)
-
-        # 本地访问 → 放行
         if _is_local(request):
             return await call_next(request)
-
-        # 登录接口本身 → 放行
-        if request.url.path == "/api/login":
+        if normalized == "/api/login":
             return await call_next(request)
 
-        # 检查 cookie
         token = request.cookies.get("kb_auth", "")
-        if token and token == _make_token(ACCESS_PASSWORD):
+        if verify_token(token):
             return await call_next(request)
 
-        # 未认证：API 返回 401，页面返回登录页
-        if request.url.path.startswith("/api/"):
+        # 未认证
+        if normalized.startswith("/api/"):
             return JSONResponse({"detail": "unauthorized"}, status_code=401)
         return HTMLResponse(LOGIN_PAGE)
