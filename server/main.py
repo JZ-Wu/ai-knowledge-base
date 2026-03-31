@@ -4,7 +4,12 @@ from server.config import DOCS_ROOT
 from server.auth import SecurityMiddleware
 from server.routes import source, chat, edit, stats, auth
 
-app = FastAPI(title="AI Knowledge Base Server")
+app = FastAPI(
+    title="AI Knowledge Base Server",
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
+)
 
 # 统一安全中间件（路径防护 + 速率限制 + 认证，单一中间件保证执行顺序）
 app.add_middleware(SecurityMiddleware)

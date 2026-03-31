@@ -70,7 +70,8 @@ def _normalize_path(raw: str) -> str | None:
             if resolved:
                 resolved.pop()
         else:
-            resolved.append(p)
+            # NTFS 忽略尾部点和空格，必须去掉防绕过
+            resolved.append(p.rstrip(". "))
     normalized = "/" + "/".join(resolved)
     return normalized.lower()
 
@@ -85,6 +86,9 @@ def _is_path_blocked(path: str) -> bool:
         return True
     # 阻止所有隐藏文件/目录（/. 开头的段）
     if "/." in path:
+        return True
+    # 阻止 NTFS 8.3 短文件名（如 SERVER~1, ENV~1）
+    if "~" in path:
         return True
     return False
 
