@@ -349,7 +349,213 @@ V3 保持了 U-Net 式编码器-解码器结构，但核心模块替换为序列
           任务头 (分割 / 检测)
 ```
 
-### 7. 实验结果
+### 7. 前向过程详解：点云如何被 Encoder 压缩、被 Decoder 还原
+
+下面按照 PTV3 前向传播的实际数据流，逐步追踪一个点云从输入到输出的完整路径。
+
+#### Phase 0：输入预处理
+
+**原始输入**：点云 $P = \{(p_i, f_i)\}_{i=1}^{N}$，其中 $p_i \in \mathbb{R}^3$ 是坐标，$f_i$ 是原始特征（如颜色、法向量、强度等）。
+
+**Step 1 — 体素化 (Grid Sampling)**：
+
+```
+原始点云 (N 个点，如 ~100K)
+    │
+    ▼ 用固定大小的 3D 网格量化坐标
+    │  同一个体素内的多个点 → 平均坐标 + 平均特征 → 合并为 1 个点
+    ▼
+体素化后的点云 (N' 个点，如 ~40K)
+```
+
+- 不可学习，纯数据预处理；目的是去除重叠点、统一密度、减少点数
+- 体素大小（如 2cm）是超参数，决定了初始分辨率
+
+**Step 2 — 特征嵌入 (Feature Embedding)**：
+
+```
+体素化的点 (N'×3 坐标 + N'×d_raw 原始特征)
+    │
+    ▼ Linear / MLP
+    ▼
+嵌入后的点特征 (N'×C)，如 C=64
+```
+
+**Step 3 — 多序列化排序**：
+
+```
+N' 个点的 3D 坐标
+    │
+    ├──→ Z-order 曲线 (xyz 轴序)  → 排列 σ₁
+    ├──→ Z-order 曲线 (zyx 轴序)  → 排列 σ₂
+    ├──→ Hilbert 曲线 (xyz 轴序)  → 排列 σ₃
+    └──→ Hilbert 曲线 (zyx 轴序)  → 排列 σ₄
+```
+
+- 每种空间填充曲线将 3D 坐标转为 1D 排序索引，得到 $S=4$ 种不同的点排列
+- 这些排列在每个 Stage 开头只需算一次（下采样后坐标改变时重新计算）
+
+#### Phase 1：Encoder（逐层压缩）
+
+Encoder 由多个 Stage 组成（典型 5 个），每个 Stage = **若干 Serialized Attention Block** + **一次 Grid Pooling 下采样**。
+
+**Serialized Attention Block 内部流程**：
+
+```
+输入: 点特征 X (M×C)
+    │
+    │ ──── 对 S=4 种序列化分别做 ────
+    │
+    ├──→ 按 σ₁ 重排 → 切窗口(w=1024) → Window Self-Attention → 结果 y₁
+    ├──→ 按 σ₂ 重排 → 切窗口(w=1024) → Window Self-Attention → 结果 y₂
+    ├──→ 按 σ₃ 重排 → 切窗口(w=1024) → Window Self-Attention → 结果 y₃
+    └──→ 按 σ₄ 重排 → 切窗口(w=1024) → Window Self-Attention → 结果 y₄
+    │
+    ▼ 融合: y = (y₁ + y₂ + y₃ + y₄) / 4
+    ▼ + Residual Connection + LayerNorm
+    ▼ FFN (两层 MLP + GELU)
+    ▼ + Residual Connection + LayerNorm
+    ▼
+输出: 更新后的点特征 X' (M×C)
+```
+
+- 窗口内做**标准 Multi-Head Self-Attention**（不再是 V1/V2 的 Vector Attention）
+- 窗口内数据在内存中连续，直接调用 **FlashAttention** 加速
+- 交替层使用 **Shifted Window**（窗口偏移 $w/2$），让窗口边界的点也能交互
+
+**Stage 间的 Grid Pooling（下采样）**：
+
+```
+Stage k 输出: M 个点, C_k 维
+    │
+    ▼ 体素大小放大 2×（如 2cm → 4cm → 8cm → 16cm → 32cm）
+    │  每个新体素内:  坐标 → 均值，特征 → 均值
+    ▼ Linear: C_k → C_{k+1}（通道扩大）
+    ▼
+Stage k+1 输入: ~M/8 个点, C_{k+1} 维
+```
+
+> 体素边长 2×，体积 $2^3=8$ 倍，点数约变为 1/8。
+
+**Encoder 整体数据流**：
+
+```
+输入: ~40K 个点, C=64
+    │
+    ▼ [Stage 1] Attention Block × n₁
+    │  40K × 64                          ──→ 保存 skip₁
+    ▼ Grid Pooling (体素 2×)
+    │
+    ▼ [Stage 2] Attention Block × n₂
+    │  ~5K × 128                         ──→ 保存 skip₂
+    ▼ Grid Pooling (体素 2×)
+    │
+    ▼ [Stage 3] Attention Block × n₃
+    │  ~600 × 256                        ──→ 保存 skip₃
+    ▼ Grid Pooling (体素 2×)
+    │
+    ▼ [Stage 4] Attention Block × n₄
+    │  ~80 × 512                         ──→ 保存 skip₄
+    ▼ Grid Pooling (体素 2×)
+    │
+    ▼ [Stage 5] Attention Block × n₅
+    │  ~10 × 512                         ← bottleneck，最压缩的表示
+```
+
+**Encoder 压缩了什么？**
+- **空间分辨率**：从 ~40K 点压缩到 ~10 个点，每个点代表一大片区域
+- **语义抽象**：低层（边缘、曲率） → 高层（物体类别、场景语义）
+- **通道补偿**：64 → 128 → 256 → 512，用更多通道编码更丰富的语义信息
+
+#### Phase 2：Decoder（逐层还原）
+
+Decoder 将底层粗粒度的语义信息**逐层上采样**回原始分辨率，用于逐点预测。
+
+**每一步上采样**：
+
+```
+低分辨率特征: M_low 个点, C_high 维
+    │
+    ▼ ① 插值上采样:
+    │    对高分辨率的每个点 p_i，找低分辨率中最近的 k 个点
+    │    用距离倒数加权插值:
+    │    f_i^{up} = Σ_j (w_j · f_j^{low}) / Σ_j w_j，其中 w_j = 1/||p_i - p_j||²
+    │
+    ▼ ② Skip Connection:
+    │    与 Encoder 对应 Stage 保存的特征相加（或 concat 后过 Linear）
+    │    f_i^{combined} = f_i^{up} + skip_k[i]
+    │
+    ▼ ③ Linear / MLP: 调整通道维度 C_high → C_low
+    │
+    ▼ ④ (可选) Attention Block 精炼特征
+    │
+    ▼
+高分辨率特征: M_high 个点, C_low 维
+```
+
+**Decoder 整体数据流**：
+
+```
+Encoder Stage 5 输出: ~10 × 512
+    │
+    ▼ 插值上采样 + skip₄  →  ~80 × 512
+    ▼ 插值上采样 + skip₃  →  ~600 × 256
+    ▼ 插值上采样 + skip₂  →  ~5K × 128
+    ▼ 插值上采样 + skip₁  →  ~40K × 64
+    │
+    ▼
+Decoder 输出: ~40K × 64（每个点一个 64 维特征向量）
+```
+
+#### Phase 3：任务头
+
+```
+Decoder 输出: N' × 64
+    │
+    ▼ Linear(64 → num_classes)
+    ▼ softmax → 每个点的类别预测
+    ▼ Loss: CrossEntropy(pred, label)
+```
+
+#### 完整前向流程一览
+
+```
+原始点云 (~100K 点, xyz+rgb)
+    │
+    ▼ 体素化 → ~40K 点
+    ▼ 特征嵌入 → 40K × 64
+    ▼ 空间填充曲线排序 (4种)
+    │
+    ╔═══════════ ENCODER ═══════════╗
+    ║                               ║
+    ║  Stage1: 40K×64   ──→ skip₁   ║
+    ║     ↓ Grid Pool (÷8)         ║
+    ║  Stage2: 5K×128   ──→ skip₂   ║
+    ║     ↓ Grid Pool (÷8)         ║
+    ║  Stage3: 600×256  ──→ skip₃   ║
+    ║     ↓ Grid Pool (÷8)         ║
+    ║  Stage4: 80×512   ──→ skip₄   ║
+    ║     ↓ Grid Pool (÷8)         ║
+    ║  Stage5: 10×512   (bottleneck)║
+    ║                               ║
+    ╚═══════════════════════════════╝
+    │
+    ╔═══════════ DECODER ═══════════╗
+    ║                               ║
+    ║  ↑ 插值 + skip₄ → 80×512     ║
+    ║  ↑ 插值 + skip₃ → 600×256    ║
+    ║  ↑ 插值 + skip₂ → 5K×128     ║
+    ║  ↑ 插值 + skip₁ → 40K×64     ║
+    ║                               ║
+    ╚═══════════════════════════════╝
+    │
+    ▼ Linear → 40K × num_classes
+    ▼ 逐点语义分割预测
+```
+
+> **设计哲学**：Encoder 通过 Grid Pooling 不断增大体素尺寸，减少点数、提升通道数，在越来越粗的粒度上做序列化窗口注意力，逐步提取高级语义。Decoder 通过插值 + Skip Connection 将语义信息还原到每个点，Skip Connection 补回下采样丢失的几何细节。V3 的关键突破在于 Attention 不再依赖 KNN 搜索邻居，而是通过空间填充曲线排序后直接在连续内存窗口上做标准 Attention，可调用 FlashAttention，速度提升 3 倍以上。
+
+### 8. 实验结果
 
 | 任务 | 数据集 | PTv2 | PTv3 | 速度对比 |
 |:-----|:------|:-----|:-----|:---------|
