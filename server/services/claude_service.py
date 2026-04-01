@@ -98,22 +98,9 @@ def stream_chat(
     if session_id and not all(c.isalnum() or c in "-_" for c in session_id):
         session_id = ""
 
-    # 有 session_id 时复用会话，只发最新一条消息，但附带新页面上下文
-    if session_id and messages:
-        user_msg = messages[-1]["content"]
-        context_parts = []
-        if page_content:
-            if len(page_content) > MAX_PAGE_CHARS:
-                page_content = page_content[:MAX_PAGE_CHARS] + "\n\n... (内容已截断)"
-            context_parts.append(f"[当前页面内容]\n{page_content}")
-        if selected_text:
-            context_parts.append(f"[用户选中的文字]\n{selected_text}")
-        if context_parts:
-            prompt = "\n\n".join(context_parts) + f"\n\n{user_msg}"
-        else:
-            prompt = user_msg
-    else:
-        prompt = build_prompt(page_content, selected_text, messages)
+    # 始终包含完整对话历史，不依赖 --resume 保持上下文
+    # --resume 只用于 cache 优化（减少 token 消耗）
+    prompt = build_prompt(page_content, selected_text, messages)
 
     # 将图片嵌入为 data-URI
     if images:
