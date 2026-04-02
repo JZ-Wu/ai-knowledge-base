@@ -733,7 +733,20 @@ $$y_i = \sum_{j \in \mathcal{W}_k(i)} \text{softmax}\left(\frac{q_i \cdot k_j}{\
 - 稀疏卷积在**原始 3D 坐标空间**上操作，与序列化解耦。先在 3D 中注入位置信息，再在 1D 序列上做标准 Attention
 - 这也是 V3 能用**标准 Multi-Head Attention**（不再需要 Vector Attention）的关键前提
 
-### Q5: Point Transformer vs 3D 稀疏卷积各自优势？
+### Q5: Sparse Conv CPE 是 translation equivariant 的，相同形状的点云在不同位置会得到一样的 PE 吗？
+
+**答**：
+
+单层 CPE 来看，**理论上是的**——稀疏卷积和普通卷积一样具有平移等变性，如果两块区域的局部几何结构和输入特征完全相同，单次 CPE 的输出确实相同。**但实际中这不构成问题**：
+
+1. **CPE 是 Conditional 的**：它作用在**特征** $X$ 上而非坐标上。经过前面层的处理后，不同空间位置的特征几乎不可能完全相同（即使初始几何一样，不同邻域上下文会产生不同特征）
+2. **序列化顺序隐式引入绝对位置**：空间填充曲线（Z-order / Hilbert）基于**绝对坐标**展开，左上角和右下角的点会被分到**完全不同的序列位置**和窗口，与不同的点做 Attention，自然产生不同输出
+3. **多层累积效应**：即使第一层 CPE 的输出碰巧相同，经过 Attention（窗口不同、邻居不同）→ FFN → 下一层 CPE（输入特征已不同），位置差异迅速放大
+4. **每个 Block 都做 CPE**：CPE 不是"只做一次"——每个 Attention Block 都会在 Self-Attention 之前重新执行 CPE，持续注入位置信息
+
+> **类比**：ViT 的 2D CPE（CPVT, Chu et al. 2021）也面临 translation equivariance 的"问题"，但实践证明 depth-wise conv CPE 配合 Attention 足以区分不同位置。PTv3 情况更好，因为空间填充曲线的序列化天然引入了绝对位置信息。
+
+### Q6: Point Transformer vs 3D 稀疏卷积各自优势？
 
 **答**：
 | 维度 | Point Transformer | 3D 稀疏卷积 |
@@ -745,7 +758,7 @@ $$y_i = \sum_{j \in \mathcal{W}_k(i)} \text{softmax}\left(\frac{q_i \cdot k_j}{\
 | 量化损失 | 无（直接操作点坐标） | 有（体素化） |
 | 工程生态 | 较新 | 成熟（spconv, TorchSparse） |
 
-### Q6: PTv3 的序列化会丢失邻域信息吗？如何缓解？
+### Q7: PTv3 的序列化会丢失邻域信息吗？如何缓解？
 
 **答**：
 - 单一序列化确实可能将空间邻居分到不同窗口
