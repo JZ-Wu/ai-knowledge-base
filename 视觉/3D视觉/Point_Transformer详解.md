@@ -283,21 +283,56 @@ $$y_i = \text{Attention}(Q_i, K_{\mathcal{W}(i)}, V_{\mathcal{W}(i)})$$
 
 **关键优势**：窗口内的点在内存中是**连续的**，可以直接使用 **FlashAttention** 加速！
 
-### 4. 稀疏卷积作为位置编码 (Sparse Conv CPE)
+### 4. 从显式位置编码到 Sparse Conv CPE：为什么要改、怎么改的
 
-V1/V2 使用显式的相对位置编码 $\delta_{ij} = \text{MLP}(p_i - p_j)$，但 V3 采用了完全不同的策略：**用 3D 稀疏卷积隐式提供位置信息**。
+#### V1/V2 的显式相对位置编码
 
-#### 为什么不再用显式相对位置编码？
+V1/V2 对每一对交互的点 $(i, j)$ 都计算一个位置编码向量：
 
-V3 的窗口注意力是在**序列化后的 1D 窗口**上做的，不再有明确的"邻居对 $(i, j)$"的概念（窗口内所有点两两交互）。如果仍然计算每对点的 $p_i - p_j$，注意力矩阵每个元素都需要一个位置编码向量，计算量和内存开销很大，也无法享受 FlashAttention 的加速（FlashAttention 不支持逐元素的自定义 bias）。
+$$\delta_{ij} = \text{MLP}(p_i - p_j)$$
 
-#### Conditional Positional Encoding (CPE) 的做法
+这个 $\delta_{ij}$ 被嵌入到注意力的**两个环节**：
 
-V3 借鉴了 2D 视觉 Transformer 中 CPE 的思想（来自 CPVT, Chu et al., 2021），用一个**轻量级的 depth-wise 3D 稀疏卷积**在 Attention Block 内注入位置信息：
+$$y_i = \sum_{j} \underbrace{\rho(\gamma(q_i - k_j + \delta_{ij}))}_{\text{注意力权重（含位置）}} \odot \underbrace{(v_j + \delta_{ij})}_{\text{Value（也含位置）}}$$
+
+- **注意力权重**：$\delta_{ij}$ 加到 $q_i - k_j$ 上，影响"看哪里"
+- **Value 聚合**：$\delta_{ij}$ 加到 $v_j$ 上，影响"看到什么"
+
+这种设计位置感知能力很强，但**完全无法使用 FlashAttention**。
+
+#### 为什么 FlashAttention 不兼容显式逐对位置编码？
+
+**FlashAttention 的核心优化**：不在显存（HBM）中存储完整的 $N \times N$ 注意力矩阵。它把 Q、K、V 分成小块（tile），在 SRAM 中逐块计算注意力，通过在线 softmax 算法得到精确结果，全程不回写 $N \times N$ 矩阵到 HBM。
+
+标准注意力 $\text{softmax}(\frac{QK^T}{\sqrt{d}})V$ 天然适配这个流程，因为 **V 矩阵对所有 query 共享**——加载 V 的一块，所有 query tile 都能用。
+
+V1/V2 的位置编码从**两个层面**打破了这个前提：
+
+**问题 1：注意力权重中的逐对 bias**
+
+$$\text{Attn}_{ij} = f(q_i, k_j, \delta_{ij})$$
+
+要给每对 $(i,j)$ 加一个 $\delta_{ij} = \text{MLP}(p_i - p_j)$，需要：
+- 要么预计算整个 $N \times N \times d$ 的 bias 张量存在显存里 → 打败了 FlashAttention 省显存的意义
+- 要么在每个 tile 内动态调用 MLP 计算 → FlashAttention 的 CUDA kernel 是固定流程，**不支持嵌入任意非线性函数**（只支持 ALiBi 这种简单的线性函数）
+
+**问题 2（更致命）：Value 中的逐对位置编码**
+
+$$y_i = \sum_j w_{ij} \cdot (v_j + \delta_{ij})$$
+
+$\delta_{ij}$ 同时依赖 $i$ 和 $j$，意味着点 $j$ 的 "Value" 对不同的 query $i$ 是不同的。有效的 V 不再是 $N \times d$ 矩阵（所有 query 共享），而是 $N \times N \times d$ 的**三维张量**（每个 query 看到的 V 都不一样）。
+
+FlashAttention 的 kernel 硬编码了"加载 $v_j$，乘以权重 $w_{ij}$，累加到 $y_i$"这个流程——它假设 $v_j$ 是固定的，不随 $i$ 变化。当 V 变成逐对不同的三维张量时，**整个计算流程都不适用了**。
+
+> **总结**：V1/V2 的位置编码 $\delta_{ij} = \text{MLP}(p_i - p_j)$ 既给注意力矩阵加了非线性 bias（无法融入 kernel），又让 V 变成了逐对不同的三维张量（打破了 FlashAttention 的基本假设）。所以如果要用 FlashAttention，必须让 Attention 回归标准的 $\text{softmax}(\frac{QK^T}{\sqrt{d}})V$ 形式。
+
+#### V3 的解法：Sparse Conv CPE
+
+既然位置编码不能放在 Attention 内部，那就**提前把位置信息"烤进"特征**，让 Attention 本身不需要位置编码。
+
+V3 借鉴了 2D 视觉 Transformer 中 CPE 的思想（来自 CPVT, Chu et al., 2021），在每个 Attention Block 前用一个**轻量级的 3D 稀疏卷积**注入位置信息：
 
 $$X = X + \text{CPE}(X), \quad \text{CPE} = \text{LayerNorm}(\text{Linear}(\text{SubMConv3d}(X)))$$
-
-具体来说：
 
 | 细节 | 说明 |
 |:-----|:-----|
@@ -320,6 +355,7 @@ Serialized Attention Block:
     │
     ▼ ③ Serialized Window Attention (使用当前 Block 分配到的单一序列化顺序)
     │    → 按 σ_k 重排 → 切窗口(1024) → FlashAttention → 恢复原序
+    │    → 此时 Attention 是标准的 softmax(QK^T/√d)V，无需位置编码
     │
     ▼ + Residual Connection
     │
@@ -330,18 +366,22 @@ Serialized Attention Block:
 输出: X' (M×C)
 ```
 
-#### 为什么稀疏卷积能替代显式位置编码？
+#### CPE 的能力与局限
 
-1. **局部感受野 = 隐式位置感知**：$3 \times 3 \times 3$ 的稀疏卷积让每个点能感知其 3D 空间邻域的特征分布，相当于隐式编码了"我在哪里、周围有什么"
+**为什么能工作**：
+
+1. **局部感受野 = 隐式位置感知**：$3 \times 3 \times 3$ 的稀疏卷积让每个点能感知其 3D 空间邻域的特征分布和稀疏占据模式，相当于隐式编码了"周围有什么"
 2. **条件性 (Conditional)**：编码结果依赖于输入特征 $X$（而非仅依赖坐标），能自适应不同语义上下文
 3. **与序列化解耦**：稀疏卷积在**原始 3D 坐标空间**上操作，不受序列化顺序的影响——先在 3D 中注入位置信息，再在 1D 序列上做注意力
-4. **极低开销**：depth-wise 卷积参数少、计算快，相比 V1 的逐对 MLP 位置编码高效得多
+4. **极低开销**：相比 V1 对窗口内 $W^2 \approx 100$ 万对点都要算 MLP，稀疏卷积只对每个点的 $3^3=27$ 邻域操作一次
 
-> **与 V1/V2 的对比**：
-> - V1/V2：显式计算每对邻居的相对位置 $\delta_{ij} = \text{MLP}(p_i - p_j)$，嵌入到注意力权重和 Value 中
-> - V3：通过 Sparse Conv 在 3D 空间中预先将位置信息"烤入"特征，Attention 本身不再需要位置编码
-> 
-> 这也是 V3 能使用**标准 Multi-Head Attention**（而非 Vector Attention）的前提——位置信息已经在特征中了，Attention 只需做标准的 $QK^TV$ 即可。
+**已知局限**：
+
+CPE **不编码绝对位置**。SubMConv3d 是卷积，卷积天然具有平移等变性——相同的局部邻域模式无论在空间哪个位置，卷积输出都相同。如果有两个完全相同的点云片段分别在左上角和右下角，它们会得到相同的 CPE 输出。实际中这很少成为问题，因为：(1) 真实点云中不同位置的局部结构几乎不会完全相同；(2) 边界处邻域的稀疏占据模式天然不同，打破了对称性；(3) 每个 Block 都有一次 CPE，多层累积后感受野不断扩大。
+
+> **V1/V2 → V3 位置编码的本质转变**：
+> - V1/V2：**Attention 内部**逐对计算 $\text{MLP}(p_i - p_j)$，位置感知精确但无法用 FlashAttention
+> - V3：**Attention 外部**通过 SpConv 预先将位置信息编码进特征，Attention 回归标准 $QK^TV$，完全兼容 FlashAttention
 
 ### 5. 多序列化顺序轮替 (Multi-Order Round-Robin)
 
