@@ -87,19 +87,14 @@ def stream_chat(
     model: str = "",
     thinking: bool = False,
     images: list[dict] | None = None,
-    session_id: str = "",
 ) -> Generator[dict, None, None]:
     """调用 claude CLI，yield 事件 dict。"""
     # Validate model
     if model and model not in _ALLOWED_MODELS:
         model = ""
 
-    # Validate session_id format
-    if session_id and not all(c.isalnum() or c in "-_" for c in session_id):
-        session_id = ""
-
-    # 始终包含完整对话历史，不依赖 --resume 保持上下文
-    # --resume 只用于 cache 优化（减少 token 消耗）
+    # --resume 在 -p 模式下不保持上下文，每次都是新会话
+    # 因此始终用 build_prompt 带完整对话历史（cache 会减少 token 开销）
     prompt = build_prompt(page_content, selected_text, messages)
 
     # 将图片嵌入为 data-URI
@@ -121,8 +116,6 @@ def stream_chat(
     cmd = [CLAUDE_CLI, "-p", "--verbose", "--output-format", "stream-json"]
     cmd.extend(["--allowedTools", _ALLOWED_TOOLS])
     cmd.extend(["--system-prompt", _SYSTEM_PROMPT])
-    if session_id:
-        cmd.extend(["--resume", session_id])
     cmd.extend(["--model", model if model else "sonnet"])
     cmd.extend(["--thinking", "enabled" if thinking else "disabled"])
 
@@ -273,18 +266,6 @@ def stream_chat(
         stderr_thread.join(timeout=5)
 
         if proc.returncode != 0 and not got_text:
-            # resume 失败时自动降级为新会话重试
-            if session_id:
-                yield from stream_chat(
-                    page_content=page_content,
-                    selected_text=selected_text,
-                    messages=messages,
-                    model=model,
-                    thinking=thinking,
-                    images=images,
-                    session_id="",  # 不再 resume，新建会话
-                )
-                return
             detail = "".join(stderr_chunks).strip() or f"exit code {proc.returncode}"
             logger.error("Claude CLI error: %s", detail)
             yield {"type": "error", "content": "Claude CLI encountered an error. Please try again."}
