@@ -461,11 +461,8 @@
     setStreamingUI(true);
 
     try {
-      // 有 session 时，只在页面变化时才发送页面内容，避免重复注入
+      // -p 模式每次都是新会话，必须始终发送页面路径
       var sendPagePath = currentPagePath;
-      if (sessionId && currentPagePath === lastSentPagePath) {
-        sendPagePath = "";  // 页面没变，不重复发送内容
-      }
       var response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -717,8 +714,6 @@
     wrapper.addEventListener("mouseleave", function() { actionBar.style.opacity = "0"; });
 
     messagesEl.appendChild(wrapper);
-
-    messagesEl.appendChild(el);
     scrollToBottom();
     return el;
   }
