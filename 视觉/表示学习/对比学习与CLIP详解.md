@@ -230,7 +230,14 @@ $$L_{i2t} = -\frac{1}{N}\sum_{i=1}^{N} \log \frac{\exp(s_{ii}/\tau)}{\sum_{j=1}^
 
 $$L = -\frac{1}{N^2}\sum_{i=1}^{N}\sum_{j=1}^{N} \log \frac{1}{1 + \exp(z_{ij} \cdot (-t \cdot s_{ij} + b))}$$
 
-其中 $z_{ij} = \begin{cases} 1 & \text{if } i=j \text{ (正样本对)} \\ -1 & \text{if } i \neq j \text{ (负样本对)} \end{cases}$，$t$ 和 $b$ 是可学习的温度和偏置。
+**各符号含义**：
+
+| 符号 | 含义 | 说明 |
+|------|------|------|
+| $s_{ij}$ | 图像 $i$ 和文本 $j$ 的**余弦相似度** | 两个特征向量归一化后的点积，范围 $[-1, 1]$。图文匹配时 $s_{ij}$ 应该大，不匹配时应该小 |
+| $z_{ij}$ | **标签信号**（正/负样本标记） | $z_{ij}=+1$ 表示 $i=j$（正样本对，对角线上）；$z_{ij}=-1$ 表示 $i \neq j$（负样本对） |
+| $t$ | **可学习的温度**（learnable temperature） | 控制相似度的缩放幅度，类似 CLIP 中的 $1/\tau$ |
+| $b$ | **可学习的偏置**（learnable bias） | 相当于决策阈值——相似度要超过多少才算"匹配" |
 
 这是 $N^2$ 个**独立的二分类问题**：每个 (图像, 文本) 对独立判断"是否匹配"。
 
@@ -238,6 +245,20 @@ $$L = -\frac{1}{N^2}\sum_{i=1}^{N}\sum_{j=1}^{N} \log \frac{1}{1 + \exp(z_{ij} \
 CLIP:   "这张图和哪个文本最匹配？"   → N 选 1（softmax）
 SigLIP: "这张图和这个文本匹配吗？"   → 是/否（sigmoid）× N² 次
 ```
+
+**直觉理解——把内部拆开看**：
+
+令 $\sigma_{ij} = z_{ij} \cdot (-t \cdot s_{ij} + b)$，则每一对的损失就是 $-\log \text{sigmoid}(-\sigma_{ij})$。
+
+- **正样本对**（$z_{ij}=+1$）：$\sigma_{ij} = -t \cdot s_{ij} + b$
+  - 我们希望 $s_{ij}$ **大**（图文相似）→ $-t \cdot s_{ij}$ 很负 → $\sigma_{ij}$ 很负
+  - → $\exp(\text{很负}) \approx 0$ → $\frac{1}{1+0} \approx 1$ → $\log(1) \approx 0$ → **损失小** ✅
+- **负样本对**（$z_{ij}=-1$）：$\sigma_{ij} = +t \cdot s_{ij} - b$
+  - 我们希望 $s_{ij}$ **小**（图文不相似）→ $t \cdot s_{ij}$ 小 → $\sigma_{ij}$ 很负
+  - → 同理 → **损失小** ✅
+- 反过来，正样本对相似度低、或负样本对相似度高，$\sigma_{ij}$ 会变大，$\exp$ 项变大，损失就大，模型被惩罚。
+
+> **一句话总结**：把 CLIP 的"N 选 1"（softmax）变成 $N^2$ 个独立的"是不是"（sigmoid 二分类），$t$ 和 $b$ 让模型自己学习合适的缩放和阈值。
 
 #### 为什么 sigmoid 能 work？
 
