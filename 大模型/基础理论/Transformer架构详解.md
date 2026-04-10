@@ -352,6 +352,39 @@ Attention = Softmax(QK^T / √d_k + CausalMask) · V
             (CausalMask: 0处填-∞, softmax后变成0)
 ```
 
+#### 为什么要除以 √d_k？
+
+Attention 公式中的 $\frac{QK^T}{\sqrt{d_k}}$ 这个缩放因子看似简单，但至关重要。
+
+**问题根源**：Q 和 K 是 $d_k$ 维向量，它们的点积 $q \cdot k = \sum_{i=1}^{d_k} q_i k_i$ 是 $d_k$ 个乘积项的求和。假设 $q_i$ 和 $k_i$ 各自独立、均值为 0、方差为 1，则：
+
+$$\mathbb{E}[q \cdot k] = 0, \quad \text{Var}[q \cdot k] = d_k$$
+
+即点积的**方差随维度 $d_k$ 线性增长**。$d_k$ 越大，点积的绝对值越大。
+
+**为什么大点积有问题？** 因为 Softmax 对输入值的量级极其敏感：
+
+```
+d_k = 64 时:   QK^T 大概在 [-16, +16] 范围 (√64=8 量级)
+d_k = 128 时:  QK^T 大概在 [-22, +22] 范围 (√128≈11 量级)
+
+假设 Softmax 输入为 [10, 1, 1, 1]:
+  → Softmax → [0.9999, 0.0000, 0.0000, 0.0000]  几乎 one-hot
+
+除以 √d_k 后变为 [1.25, 0.125, 0.125, 0.125] (d_k=64):
+  → Softmax → [0.46, 0.18, 0.18, 0.18]  分布更平滑，梯度更健康
+```
+
+当点积值很大时，Softmax 输出趋近 one-hot（一个接近 1，其余接近 0），落入**饱和区**。在饱和区：
+- **梯度接近零**（$\frac{\partial \text{softmax}}{\partial z} \approx 0$），导致反向传播时梯度消失，训练停滞
+- 注意力"锁死"在某个 token 上，失去灵活分配权重的能力
+
+**除以 $\sqrt{d_k}$ 后**，点积的方差被归一化为 1（与维度无关），Softmax 的输入保持在合理范围，梯度正常流动。
+
+**一句话总结**：$\sqrt{d_k}$ 缩放是为了**抵消高维点积的方差膨胀**，防止 Softmax 进入饱和区导致梯度消失。这是一个与维度无关的归一化，让注意力机制在任意 $d_k$ 下都能稳定训练。
+
+> **补充**：原始论文 (Vaswani et al., 2017) 在 3.2.1 节明确指出："We suspect that for large values of $d_k$, the dot products grow large in magnitude, pushing the softmax function into regions where it has extremely small gradients. To counteract this effect, we scale the dot products by $\frac{1}{\sqrt{d_k}}$."
+
 #### Multi-Head Attention (MHA)
 
 将注意力拆分为多个"头"，每个头关注不同的信息：
@@ -519,6 +552,90 @@ output = input + SubLayer(Norm(input))   ← Pre-Norm 残差
 残差连接的重要性：
 - 缓解梯度消失，让深层网络（32~80 层）可训练
 - 保证信息可以跳过某些层直接传递
+
+### 3.7 Gradient Clipping（梯度裁剪）
+
+深层 Transformer 训练中，梯度可能在某些 step 突然变得极大（**梯度爆炸**），尤其是：
+- 训练早期参数还不稳定时
+- 遇到异常数据（如特别长或特别罕见的序列）时
+- 学习率设置偏大时
+
+梯度爆炸会导致参数更新幅度过大，模型 loss 突然飙升甚至 NaN。**Gradient Clipping 是防止这种情况的安全网**。
+
+#### 两种常见方式
+
+**1. 按范数裁剪（Clip by Global Norm）—— 最常用**
+
+计算所有参数梯度拼接后的全局 L2 范数，如果超过阈值就等比缩小：
+
+$$\text{if } \|g\|_2 > \text{max\_norm}: \quad g \leftarrow g \cdot \frac{\text{max\_norm}}{\|g\|_2}$$
+
+```python
+# PyTorch 实现 —— 几乎所有 LLM 训练都用这行
+torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+```
+
+关键特性：
+- **保持梯度方向不变**，只缩放大小——不会扭曲优化方向
+- 对所有参数的梯度**等比例缩放**，保持各参数间梯度的相对比例
+- 正常训练时梯度范数一般在阈值以内，裁剪不会触发，**不影响正常优化**
+
+```
+正常 step:  ‖g‖ = 0.8,  max_norm = 1.0  → 不裁剪，原样使用
+异常 step:  ‖g‖ = 50.0, max_norm = 1.0  → 缩放为 g × (1.0/50.0)，方向不变
+```
+
+**2. 按值裁剪（Clip by Value）—— 较少使用**
+
+将每个梯度元素独立截断到 $[-\text{clip\_value}, +\text{clip\_value}]$ 范围：
+
+$$g_i \leftarrow \text{clamp}(g_i, -c, +c)$$
+
+缺点：会改变梯度方向（不同维度裁剪程度不同），所以在 LLM 训练中几乎不用。
+
+#### 在 LLM 训练中的使用
+
+几乎所有主流 LLM 都使用 **clip by global norm**，阈值通常为 **1.0**：
+
+| 模型 | Gradient Clip | 备注 |
+|------|--------------|------|
+| GPT-3 | 1.0 | global norm |
+| LLaMA | 1.0 | global norm |
+| LLaMA-2 | 1.0 | global norm |
+| Qwen | 1.0 | global norm |
+| DeepSeek-V2/V3 | 1.0 | global norm |
+
+#### 完整训练循环中的位置
+
+```python
+for batch in dataloader:
+    optimizer.zero_grad()
+    
+    loss = model(batch)                    # 前向传播
+    loss.backward()                        # 反向传播，计算梯度
+    
+    # ★ 梯度裁剪 —— 在 backward() 之后、optimizer.step() 之前
+    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+    
+    optimizer.step()                       # 用（可能被裁剪的）梯度更新参数
+    scheduler.step()                       # 更新学习率
+```
+
+注意：梯度裁剪必须在 `backward()` 之后（梯度已计算出来）、`step()` 之前（参数还没更新）。
+
+#### 与其他稳定训练手段的关系
+
+Gradient Clipping 是训练稳定性的**最后一道防线**，与其他机制互补：
+
+| 手段 | 解决什么问题 | 作用时机 |
+|------|------------|---------|
+| RMSNorm / LayerNorm | 每层输出分布漂移 | 前向传播 |
+| 残差连接 | 梯度消失 | 前向 + 反向 |
+| $\sqrt{d_k}$ 缩放 | Softmax 饱和 → 梯度消失 | 前向传播 |
+| Learning Rate Warmup | 训练初期参数不稳定 | 优化器 |
+| **Gradient Clipping** | **梯度爆炸（异常大梯度）** | **反向传播后** |
+
+直觉：RMSNorm 和残差连接让梯度"大部分时候"正常流动，Gradient Clipping 处理那些"偶尔出现"的异常大梯度——**常规手段管常态，Clipping 管极端情况**。
 
 ---
 
