@@ -13,9 +13,6 @@
 ### MoE (混合专家)
 - [MoE详解](MoE详解.md) — 稀疏激活、路由机制、负载均衡、DeepSeek 的细粒度专家与共享专家
 
-### MLA (多头潜在注意力)
-- [MLA详解](MLA详解.md) — 已迁移至 [KV Cache 详解](../推理优化/KV_Cache详解.md)
-
 ### Scaling Laws
 - [Scaling Laws详解](Scaling_Laws详解.md) — Kaplan 定律、Chinchilla 最优比例 (D≈20N)、训练规划计算
 
