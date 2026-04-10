@@ -101,9 +101,12 @@ def stream_chat(
     resuming = bool(session_id)
 
     if resuming:
-        # resume 模式：只发最后一条用户消息
+        # resume 模式：只发最后一条用户消息，附加选中文字
         last_msg = messages[-1]["content"] if messages else ""
-        prompt = last_msg
+        if selected_text:
+            prompt = f"用户选中了以下文字：\n\n{selected_text}\n\n用户的问题：{last_msg}"
+        else:
+            prompt = last_msg
     else:
         # 新会话：完整 prompt 含页面内容和对话历史
         prompt = build_prompt(page_content, selected_text, messages)
