@@ -87,15 +87,26 @@ def stream_chat(
     model: str = "",
     thinking: bool = False,
     images: list[dict] | None = None,
+    session_id: str = "",
 ) -> Generator[dict, None, None]:
-    """调用 claude CLI，yield 事件 dict。"""
+    """调用 claude CLI，yield 事件 dict。
+
+    有 session_id 时用 --resume 恢复会话，只发最后一条消息；
+    否则用 build_prompt 带完整上下文创建新会话。
+    """
     # Validate model
     if model and model not in _ALLOWED_MODELS:
         model = ""
 
-    # --resume 在 -p 模式下不保持上下文，每次都是新会话
-    # 因此始终用 build_prompt 带完整对话历史（cache 会减少 token 开销）
-    prompt = build_prompt(page_content, selected_text, messages)
+    resuming = bool(session_id)
+
+    if resuming:
+        # resume 模式：只发最后一条用户消息
+        last_msg = messages[-1]["content"] if messages else ""
+        prompt = last_msg
+    else:
+        # 新会话：完整 prompt 含页面内容和对话历史
+        prompt = build_prompt(page_content, selected_text, messages)
 
     # 将图片嵌入为 data-URI
     if images:
@@ -111,13 +122,18 @@ def stream_chat(
         if img_parts:
             prompt = "\n".join(img_parts) + "\n\n" + prompt
 
-    logger.info("Prompt size: %d bytes, images: %d", len(prompt.encode("utf-8")), len(images) if images else 0)
+    logger.info("Session: %s | Prompt size: %d bytes, images: %d",
+                session_id or "(new)", len(prompt.encode("utf-8")), len(images) if images else 0)
 
     cmd = [CLAUDE_CLI, "-p", "--verbose", "--output-format", "stream-json"]
     cmd.extend(["--allowedTools", _ALLOWED_TOOLS])
-    cmd.extend(["--system-prompt", _SYSTEM_PROMPT])
     cmd.extend(["--model", model if model else "sonnet"])
     cmd.extend(["--thinking", "enabled" if thinking else "disabled"])
+
+    if resuming:
+        cmd.extend(["--resume", session_id])
+    else:
+        cmd.extend(["--system-prompt", _SYSTEM_PROMPT])
 
     # 直接在知识库目录运行，不使用沙箱
     # 安全靠: --allowedTools 限制工具 + system prompt 约束 + 中间件阻止敏感路径

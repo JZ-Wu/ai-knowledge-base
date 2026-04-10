@@ -469,7 +469,10 @@
     setStreamingUI(true);
 
     try {
-      // -p 模式每次都是新会话，必须始终发送页面路径
+      // 有 session 时用 resume 模式，只发最后一条消息；否则发完整历史
+      var sendMessages = sessionId
+        ? [chatMessages[chatMessages.length - 1]]
+        : chatMessages;
       var sendPagePath = currentPagePath;
       var response = await fetch("/api/chat", {
         method: "POST",
@@ -477,7 +480,7 @@
         body: JSON.stringify({
           page_path: sendPagePath,
           selected_text: selectedText,
-          messages: chatMessages,
+          messages: sendMessages,
           model: modelSelect ? modelSelect.value : "claude-opus-4-6",
           thinking: thinkingCheckbox ? thinkingCheckbox.checked : false,
           images: images,
@@ -553,12 +556,14 @@
               renderMarkdown(textContainer, fullResponse);
               scrollToBottom();
             } else if (data.type === "error") {
-              // resume 失败时重置 session，下次自动新建会话
+              // resume 失败时重置 session，下次自动用完整历史新建会话
               if (sessionId && data.content.indexOf("CLI error") !== -1) {
                 sessionId = "";
                 saveHistory();
+                fullResponse += "\n\n> Session 已过期，请重新发送消息。";
+              } else {
+                fullResponse += "\n\n**Error:** " + data.content;
               }
-              fullResponse += "\n\n**Error:** " + data.content;
               renderMarkdown(textContainer, fullResponse);
             } else if (data.type === "usage") {
               // 上下文 ≈ input_tokens + cache_read + cache_create（总发送量）
