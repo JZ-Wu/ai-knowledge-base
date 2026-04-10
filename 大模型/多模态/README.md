@@ -19,6 +19,7 @@
 
 ### 视频理解与生成
 - [视频 VLM 详解](视频VLM详解.md) — Video-ChatGPT、Video-LLaVA、LLaVA-OneVision、Qwen2-VL 视频模式、长视频理解
+- [视频关键帧检测](视频关键帧检测.md) — 均匀采样、帧差法、场景检测、压缩域分析、面向 T&S 的采样策略
 
 ---
 [返回上级](../README.md) | [返回总目录](../../README.md)
