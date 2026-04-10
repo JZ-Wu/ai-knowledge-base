@@ -437,7 +437,7 @@ MHA (以 d=4096, n_heads=32 为例):
 
 #### GQA (Grouped Query Attention)
 
-多个 Q 头共享同一组 K/V，减少 KV Cache 大小。详细原理和推导见 [推理优化详解](../推理优化/推理优化详解.md) 的 GQA/MQA 章节。
+多个 Q 头共享同一组 K/V，减少 KV Cache 大小。详细原理和 MHA/MQA/GQA/MLA 的完整对比见 [KV Cache 详解](../推理优化/KV_Cache详解.md)。
 
 ### 3.4 FFN (前馈网络)
 

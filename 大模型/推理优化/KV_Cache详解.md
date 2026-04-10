@@ -89,7 +89,161 @@ GPU 算力利用率 ≈ 0.5/156 ≈ 0.3%
 
 ---
 
-## 二、PagedAttention 与 vLLM
+## 二、KV Cache 压缩：从 MHA 到 MLA
+
+KV Cache 的显存公式中，关键变量是 **n_kv × d_head**（每层每 token 的 KV 维度）。围绕这个变量，学界提出了一条清晰的技术演进线：
+
+```
+MHA → MQA → GQA → MLA
+  ↓       ↓      ↓      ↓
+全头KV  共享1组  分组共享  低秩压缩
+```
+
+### 2.1 MHA（Multi-Head Attention）
+
+标准做法，每个 Q 头有独立的 K/V 头：
+
+```
+Q1→K1,V1 | Q2→K2,V2 | Q3→K3,V3 | ... | Q32→K32,V32
+
+每层每 token 缓存: 2 × n_heads × d_head
+以 LLaMA-2-7B: 2 × 32 × 128 = 8192 维
+```
+
+所有头的 K/V 都独立存储，表达能力最强，但 KV Cache 最大。
+
+### 2.2 MQA（Multi-Query Attention，2019）
+
+极端方案：**所有 Q 头共享同一组 K/V**：
+
+```
+Q1, Q2, Q3, ..., Q32 → 共用 K1, V1
+
+每层每 token 缓存: 2 × 1 × d_head = 2 × 128 = 256 维
+相比 MHA: 节省 32 倍
+```
+
+**优点**：KV Cache 极小，推理速度快。
+**缺点**：共享过度，不同头被迫用完全相同的 K/V 做注意力，模型质量有明显下降。
+
+### 2.3 GQA（Grouped-Query Attention，2023）
+
+MQA 和 MHA 的折中：**将 Q 头分组，每组共享一对 K/V**：
+
+```
+MHA:  Q1→KV1 | Q2→KV2 | Q3→KV3 | Q4→KV4 | ... | Q32→KV32  (32 组 KV)
+GQA:  Q1,Q2,Q3,Q4 → KV1 | Q5,Q6,Q7,Q8 → KV2 | ...         (8 组 KV)
+MQA:  Q1,Q2,...,Q32 → KV1                                    (1 组 KV)
+```
+
+```
+GQA (g=8 组):
+  每层每 token 缓存: 2 × 8 × 128 = 2048 维
+  相比 MHA: 节省 4 倍
+  相比 MQA: 多 8 倍缓存，但模型质量几乎无损
+```
+
+**GQA 是当前最广泛使用的方案**：LLaMA-3、Qwen-2.5、Mistral、Gemma 等主流模型均采用。
+
+### 2.4 三种方案的核心矛盾
+
+MQA/GQA 的思路是**减少 KV 头数**来降低缓存，但头数减少 = 注意力表达能力下降：
+
+```
+表达能力: MHA > GQA > MQA
+KV Cache: MHA > GQA > MQA
+
+想要高表达能力 → 多头 → KV Cache 大
+想要低 KV Cache → 少头 → 表达能力弱
+
+头数和缓存量被"绑定"在一起，无法解耦
+```
+
+### 2.5 MLA（Multi-head Latent Attention）
+
+DeepSeek-V2/V3 提出了完全不同的思路：**不减少头数，而是对 KV 做低秩压缩**。
+
+#### 核心思想：压缩与解压
+
+```
+标准 MHA：直接缓存完整的 K 和 V
+  x → W_K → K → 缓存 K
+  x → W_V → V → 缓存 V
+  缓存量: 2 × n_heads × d_head (很大)
+
+MLA：缓存压缩后的潜在向量 c_KV，需要时再解压
+  x → W_DKV → c_KV → 缓存 c_KV (很小！)
+                ↓ (推理时解压)
+         c_KV → W_UK → K
+         c_KV → W_UV → V
+  缓存量: d_c (远小于 2 × n_heads × d_head)
+```
+
+W_DKV 是"下投影"（压缩），W_UK/W_UV 是"上投影"（解压）。本质是**低秩分解**：用两个小矩阵的乘积近似原来的大矩阵。
+
+#### 为什么低秩假设合理？
+
+语言模型中，不同位置、不同层的 K/V 往往存在大量冗余，实际有效信息量（矩阵秩）远小于理论维度上限。大量关于注意力头冗余性的研究已证实这一点——很多头在做高度相似的事情。
+
+#### 数学推导
+
+MLA 引入联合压缩向量 $c_{KV}$：
+
+**压缩**：$c_{KV} = X W_{DKV}$，其中 $W_{DKV} \in \mathbb{R}^{d \times d_c}$，$d_c \ll n_h \times d_h$
+
+**解压**：$K = c_{KV} W_{UK}$，$V = c_{KV} W_{UV}$
+
+**KV Cache 大小**：$d_c \times L$（注意没有系数 2，因为 K 和 V 从同一个 $c_{KV}$ 解压）
+
+Q 也可以做类似压缩（$c_Q = X W_{DQ}$，$Q = c_Q W_{UQ}$），但 Q 不需要缓存（只对当前 token 计算），主要是减少训练时的计算量。
+
+#### 与 RoPE 的兼容
+
+RoPE 需要在 Q/K 上施加位置相关的旋转变换。但 MLA 缓存的是压缩后的 $c_{KV}$（不含位置信息），解压后才得到 K——如果每次推理都解压再加 RoPE，计算开销增大。
+
+**解法：解耦 RoPE**——把 K 拆成两部分：
+
+```
+K = concat(K_nope, K_rope)
+
+K_nope: 从 c_KV 解压，负责"内容匹配"，不加 RoPE
+K_rope: 独立计算，负责"位置编码"，加 RoPE 后单独缓存
+
+最终缓存: c_KV (512 维) + K_rope (64 维) = 576 维
+```
+
+$K_{\text{rope}}$ 维度很小（64 维），额外开销可忽略。
+
+#### 工程优化：吸收矩阵乘法
+
+推理时解压步骤可以和后续投影合并：
+
+$$Q \cdot K^T = Q \cdot (c_{KV} \cdot W_{UK})^T = (Q \cdot W_{UK}^T) \cdot c_{KV}^T$$
+
+不需要显式恢复 K，直接用 $c_{KV}$ 计算。类似的，$V$ 的解压可以和输出投影 $W_O$ 合并：预计算 $W_{UV} \cdot W_O$，推理时只需一次矩阵乘。
+
+### 2.6 四种方案横向对比
+
+以 DeepSeek-V2 配置为基准（$d=5120, n_h=128, d_h=128$, 60 层, seq=4096, FP16）：
+
+| 方案 | 每层每 token 缓存量 | 全模型 KV Cache | 相比 MHA | 表达能力 |
+|------|-------------------|----------------|---------|---------|
+| MHA | 2 × 128 × 128 = 32768 维 | **15.7 GB** | 1× | 最强 |
+| MQA | 2 × 1 × 128 = 256 维 | **0.12 GB** | 1/128 | 最弱 |
+| GQA (g=8) | 2 × 8 × 128 = 2048 维 | **1.0 GB** | 1/16 | 较强 |
+| MLA | 512 + 64 = 576 维 | **0.28 GB** | 1/56 | ≈ MHA |
+
+**MLA 的突破**：KV Cache 仅为 MHA 的 1/56，比 GQA 还小约 3.6 倍，但保持了 128 头的完整表达能力。它将"头数"和"缓存量"**解耦**——可以有很多头（高表达能力），同时 Cache 很小（低显存开销）。
+
+### 2.7 实际效果
+
+**DeepSeek-V2**（236B 参数，64 层，128 头）：每 token KV Cache 从约 4 MB（MHA）降到 72 KB（MLA），压缩 57 倍。在 batch inference 场景下，直接转化为更大的 batch size 和更高的吞吐量。
+
+**DeepSeek-V3**（671B 参数，61 层，128 头）：延续 MLA 设计，$d_c=512, d_{\text{rope}}=64$。即使模型参数暴增到 671B，单卡 H800 80GB 在合理批量下仍可高效运行——KV Cache 不再是瓶颈。
+
+---
+
+## 三、PagedAttention 与 vLLM
 
 ### 2.1 KV Cache 的显存碎片问题
 
@@ -191,10 +345,13 @@ Continuous Batching:
 
 ---
 
-## 三、面试快速回答
+## 四、面试快速回答
 
 > **Q: KV Cache 占多少显存？**
 > A: `2 × 层数 × KV头数 × 头维度 × 序列长度 × 字节数`。7B 模型 FP16 下单请求 8K 长度约 1GB，batch=32 就是 32GB，可能超过模型本身。GQA 可以减少到 1/4。
+>
+> **Q: MHA/MQA/GQA/MLA 的区别？**
+> A: 都是在减小 KV Cache。MQA 所有头共享一组 KV，压缩最大但质量差；GQA 分组共享，是当前主流折中方案；MLA 走低秩压缩路线，不减头数而是把 KV 压缩到低维潜在向量，比 GQA 还省 3-4 倍且不损失表达能力。
 >
 > **Q: PagedAttention 解决什么问题？**
 > A: KV Cache 的显存碎片。传统方式预分配连续显存浪费 70-80%，PagedAttention 借鉴 OS 虚拟内存分页，按需分配非连续 block，碎片降到 <4%，还支持 Copy-on-Write。
@@ -207,6 +364,6 @@ Continuous Batching:
 **相关文档**：
 - [推理优化详解](推理优化详解.md) — FlashAttention、量化、投机解码等其他优化技术
 - [Transformer架构详解](../基础理论/Transformer架构详解.md) — KV Cache 在注意力机制中的角色
-- [MLA详解](../基础理论/MLA详解.md) — Multi-head Latent Attention 对 KV Cache 的压缩
+- [长上下文详解](../基础理论/长上下文详解.md) — KV Cache 压缩在长上下文场景的应用
 
 [返回上级](../README.md) | [返回总目录](../../README.md)

@@ -6,7 +6,6 @@
     - [Transformer架构详解](/大模型/基础理论/Transformer架构详解.md)
     - [Tokenizer详解](/大模型/基础理论/Tokenizer详解.md)
     - [MoE详解](/大模型/基础理论/MoE详解.md)
-    - [MLA详解](/大模型/基础理论/MLA详解.md)
     - [Scaling Laws详解](/大模型/基础理论/Scaling_Laws详解.md)
     - [长上下文详解](/大模型/基础理论/长上下文详解.md)
     - [CoT与推理范式](/大模型/基础理论/CoT与推理范式.md)
