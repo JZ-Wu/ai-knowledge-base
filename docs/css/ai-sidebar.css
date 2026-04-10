@@ -4,7 +4,7 @@
   position: fixed;
   right: 0;
   top: 0;
-  width: 440px;
+  width: var(--ai-sidebar-w, 440px);
   min-width: 300px;
   max-width: 80vw;
   height: 100vh;
@@ -54,7 +54,7 @@ body.ai-sidebar-resizing .content {
 
 /* 主内容区让位 */
 body.ai-sidebar-open .content {
-  margin-right: 440px;
+  margin-right: var(--ai-sidebar-w, 440px);
   transition: margin-right 0.3s ease;
 }
 

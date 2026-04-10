@@ -224,12 +224,10 @@
     document.body.classList.add("ai-sidebar-open");
     localStorage.setItem("ai-sidebar-open", "1");
 
-    // 恢复保存的宽度
+    // 恢复保存的宽度（通过 CSS 变量同步侧边栏和内容区）
     var savedW = localStorage.getItem("ai-sidebar-width");
     if (savedW) {
-      sidebar.style.width = savedW;
-      var content = document.querySelector(".content");
-      if (content) content.style.marginRight = savedW;
+      document.documentElement.style.setProperty("--ai-sidebar-w", savedW);
     }
 
     // 跟踪当前页面和选中文字（不重置 session，保留跨页对话上下文）
@@ -253,8 +251,6 @@
     sidebar.classList.remove("open");
     document.body.classList.remove("ai-sidebar-open");
     localStorage.setItem("ai-sidebar-open", "0");
-    var content = document.querySelector(".content");
-    if (content) content.style.marginRight = "";
   }
 
   closeBtn.addEventListener("click", closeSidebar);
@@ -836,8 +832,7 @@
       var newWidth = window.innerWidth - e.clientX;
       if (newWidth < 300) newWidth = 300;
       if (newWidth > window.innerWidth * 0.8) newWidth = window.innerWidth * 0.8;
-      sidebar.style.width = newWidth + "px";
-      document.querySelector(".content").style.marginRight = newWidth + "px";
+      document.documentElement.style.setProperty("--ai-sidebar-w", newWidth + "px");
     });
 
     document.addEventListener("mouseup", function () {
@@ -845,14 +840,9 @@
       dragging = false;
       resizeHandle.classList.remove("dragging");
       document.body.classList.remove("ai-sidebar-resizing");
-      localStorage.setItem("ai-sidebar-width", sidebar.style.width);
+      var w = getComputedStyle(sidebar).width;
+      localStorage.setItem("ai-sidebar-width", w);
     });
-
-    // 恢复保存的宽度
-    var savedWidth = localStorage.getItem("ai-sidebar-width");
-    if (savedWidth) {
-      sidebar.style.width = savedWidth;
-    }
   }
 
   // ========== Helpers ==========
