@@ -132,6 +132,32 @@ body.ai-sidebar-open .content {
   gap: 12px;
 }
 
+/* 跳到底部悬浮按钮 */
+.ai-scroll-bottom-btn {
+  position: absolute;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid #ddd;
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  cursor: pointer;
+  font-size: 18px;
+  color: #555;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+  transition: opacity 0.2s;
+}
+.ai-scroll-bottom-btn:hover {
+  background: #f0f0f0;
+  color: #333;
+}
+
 .ai-msg-wrapper {
   max-width: 92%;
   display: flex;

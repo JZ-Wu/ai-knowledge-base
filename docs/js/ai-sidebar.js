@@ -376,6 +376,10 @@
     appendMessageDOM("user", text, images);
     saveHistory();
 
+    // 用户发送消息时强制滚到底部
+    userNearBottom = true;
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+
     var assistantEl = appendMessageDOM("assistant", "");
     // 为 thinking、工具调用和正文创建独立容器
     var thinkContainer = document.createElement("div");
@@ -793,8 +797,38 @@
     // 不再调用 renderMathInElement —— LaTeX 已在上面直接渲染完毕
   }
 
-  function scrollToBottom() {
+  // ── 智能滚动：只在用户已经在底部附近时才自动滚动 ──
+  var userNearBottom = true;
+
+  messagesEl.addEventListener("scroll", function () {
+    var threshold = 80;
+    userNearBottom =
+      messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < threshold;
+    updateScrollBtn();
+  });
+
+  // 悬浮"跳到底部"按钮
+  var scrollBtn = document.createElement("button");
+  scrollBtn.className = "ai-scroll-bottom-btn";
+  scrollBtn.innerHTML = "&#8595;";
+  scrollBtn.title = "跳到底部";
+  scrollBtn.style.display = "none";
+  sidebar.appendChild(scrollBtn);
+  scrollBtn.addEventListener("click", function () {
     messagesEl.scrollTop = messagesEl.scrollHeight;
+    userNearBottom = true;
+    updateScrollBtn();
+  });
+
+  function updateScrollBtn() {
+    scrollBtn.style.display = userNearBottom ? "none" : "flex";
+  }
+
+  function scrollToBottom() {
+    if (userNearBottom) {
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+    updateScrollBtn();
   }
 
   // ========== KaTeX ==========
