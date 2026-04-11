@@ -61,15 +61,21 @@
         validMessages.push(m);
         var el = appendMessageDOM(m.role, m.content);
         if (m.role === "assistant") {
-          renderMarkdown(el, m.content);
+          // 创建 textContainer 子 div，和流式输出时结构一致
+          var textDiv = document.createElement("div");
+          textDiv.className = "ai-text-container";
+          el.appendChild(textDiv);
+          renderMarkdown(textDiv, m.content);
           // fallback: 如果 renderMarkdown 没成功填充内容
-          if (!el.innerHTML.trim()) {
-            el.textContent = m.content;
+          if (!textDiv.innerHTML.trim()) {
+            textDiv.textContent = m.content;
           }
         }
       });
       chatMessages = validMessages;
-    } catch (_) {}
+    } catch (e) {
+      console.error("[ai-sidebar] loadHistory error:", e);
+    }
   }
 
   function clearHistory() {
@@ -546,8 +552,10 @@
 
       fetchQuota();
 
-      if (fullResponse) {
-        chatMessages.push({ role: "assistant", content: fullResponse });
+      // 始终保存 assistant 消息（即使只有 tool calls 没有文字）
+      var savedContent = fullResponse || (filesEdited ? "[文件已修改]" : "");
+      if (savedContent) {
+        chatMessages.push({ role: "assistant", content: savedContent });
       }
       saveHistory();
 
