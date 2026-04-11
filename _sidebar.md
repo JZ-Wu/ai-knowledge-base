@@ -42,6 +42,7 @@
     - [DeepSeek系列技术解读](/大模型/主流模型/DeepSeek系列技术解读.md)
     - [InternVL系列技术解读](/大模型/主流模型/InternVL系列技术解读.md)
     - [Qwen系列技术解读](/大模型/主流模型/Qwen系列技术解读.md)
+    - [LLaMA系列技术解读](/大模型/主流模型/LLaMA系列技术解读.md)
 
 - **强化学习**
   - [总览](/强化学习/README.md)
