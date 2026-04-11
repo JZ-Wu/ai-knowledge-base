@@ -54,11 +54,21 @@
       currentPagePath = data.page || "";
       sessionId = data.sessionId || "";
 
-      // 重建 DOM
+      // 重建 DOM — 过滤掉空的 assistant 消息
+      var validMessages = [];
       chatMessages.forEach(function (m) {
+        if (m.role === "assistant" && !m.content) return; // 跳过空回复
+        validMessages.push(m);
         var el = appendMessageDOM(m.role, m.content);
-        if (m.role === "assistant") renderMarkdown(el, m.content);
+        if (m.role === "assistant") {
+          renderMarkdown(el, m.content);
+          // fallback: 如果 renderMarkdown 没成功填充内容
+          if (!el.innerHTML.trim()) {
+            el.textContent = m.content;
+          }
+        }
       });
+      chatMessages = validMessages;
     } catch (_) {}
   }
 
@@ -536,7 +546,9 @@
 
       fetchQuota();
 
-      chatMessages.push({ role: "assistant", content: fullResponse });
+      if (fullResponse) {
+        chatMessages.push({ role: "assistant", content: fullResponse });
+      }
       saveHistory();
 
       if (filesEdited) {
