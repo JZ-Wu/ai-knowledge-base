@@ -360,6 +360,23 @@
     }
   }
 
+  function fetchChat(pagePath, messages, sid, images) {
+    return fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        page_path: pagePath,
+        selected_text: selectedText,
+        messages: messages,
+        model: modelSelect ? modelSelect.value : "claude-opus-4-6",
+        thinking: thinkingCheckbox ? thinkingCheckbox.checked : false,
+        images: images,
+        session_id: sid,
+      }),
+      signal: abortController.signal,
+    });
+  }
+
   async function sendMessage() {
     var text = inputEl.value.trim();
     if (!text && pendingImages.length === 0) return;
@@ -398,25 +415,10 @@
     setStreamingUI(true);
 
     try {
-      // 有 session 时用 resume 模式，只发最后一条消息；否则发完整历史
-      var sendMessages = sessionId
-        ? [chatMessages[chatMessages.length - 1]]
-        : chatMessages;
+      // 始终发送完整历史，后端根据 session_id 决定是 resume 还是新建
       var sendPagePath = currentPagePath;
-      var response = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          page_path: sendPagePath,
-          selected_text: selectedText,
-          messages: sendMessages,
-          model: modelSelect ? modelSelect.value : "claude-opus-4-6",
-          thinking: thinkingCheckbox ? thinkingCheckbox.checked : false,
-          images: images,
-          session_id: sessionId,
-        }),
-        signal: abortController.signal,
-      });
+
+      var response = await fetchChat(sendPagePath, chatMessages, sessionId, images);
       lastSentPagePath = currentPagePath;
 
       if (!response.ok) throw new Error("API error: " + response.status);
@@ -485,14 +487,12 @@
               renderMarkdown(textContainer, fullResponse);
               scrollToBottom();
             } else if (data.type === "error") {
-              // resume 失败时重置 session，下次自动用完整历史新建会话
+              // resume 失败时重置 session，下次自动新建会话
               if (sessionId && data.content.indexOf("CLI error") !== -1) {
                 sessionId = "";
                 saveHistory();
-                fullResponse += "\n\n> Session 已过期，请重新发送消息。";
-              } else {
-                fullResponse += "\n\n**Error:** " + data.content;
               }
+              fullResponse += "\n\n**Error:** " + data.content;
               renderMarkdown(textContainer, fullResponse);
             } else if (data.type === "usage") {
               // 上下文 ≈ input_tokens + cache_read + cache_create（总发送量）

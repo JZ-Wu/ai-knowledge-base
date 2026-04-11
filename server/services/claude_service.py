@@ -287,6 +287,22 @@ def stream_chat(
         if proc.returncode != 0 and not got_text:
             detail = "".join(stderr_chunks).strip() or f"exit code {proc.returncode}"
             logger.error("Claude CLI error: %s", detail)
+
+            # resume 失败时自动用完整历史重试新会话
+            if resuming:
+                logger.info("Resume failed, retrying with full history...")
+                yield {"type": "text", "content": "> *Session 已过期，正在新建会话...*\n\n"}
+                yield from stream_chat(
+                    page_content=page_content,
+                    selected_text=selected_text,
+                    messages=messages,
+                    model=model,
+                    thinking=thinking,
+                    images=images,
+                    session_id="",  # 不再 resume，新建会话
+                )
+                return
+
             yield {"type": "error", "content": "Claude CLI encountered an error. Please try again."}
     finally:
         timeout_timer.cancel()
