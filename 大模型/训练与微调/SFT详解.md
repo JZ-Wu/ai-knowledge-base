@@ -642,6 +642,7 @@ $$K' = [\underbrace{K_{prefix}}_{可学习}; K_{input}], \quad V' = [\underbrace
 
 **相关文档**：
 - [预训练与后训练](预训练与后训练.md)
+- [知识蒸馏详解](知识蒸馏详解.md)
 - [RLHF与PPO详解](RLHF与PPO详解.md)
 - [DPO详解](DPO详解.md)
 - [GRPO详解](GRPO详解.md)
