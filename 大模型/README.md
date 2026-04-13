@@ -12,7 +12,7 @@
 | [外部增强与Agent](外部增强与Agent/README.md) | RAG、工具调用/MCP、Agent 框架 |
 | [多模态](多模态/README.md) | VLM、图像生成、语音、视频 |
 | [推理优化](推理优化/推理优化详解.md) | [KV Cache](推理优化/KV_Cache详解.md)、FlashAttention、量化、vLLM、投机解码、[AI Infra 概述](推理优化/AI_Infra概述.md) |
-| [评估与对齐](评估与对齐/幻觉与评测详解.md) | 幻觉原因与缓解、主流 Benchmark、评测方法 |
+| [评估与对齐](多模态/VLM评测基准.md) | 已合并至 VLM 评测基准与 VLM 训练与评测 |
 
 ---
 [返回总目录](../README.md)
