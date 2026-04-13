@@ -1,1266 +1,524 @@
 # InternVL 系列技术解读
 
-InternVL 是上海 AI Lab（书生团队）开发的多模态视觉语言模型系列，从 2024 年起以开源姿态在多个多模态基准上持续挑战 GPT-4V、Gemini 等闭源旗舰。本文深入解读 InternVL 1.5、2.0、2.5 三个核心版本的技术报告，梳理其核心设计理念与关键创新。
+InternVL 是上海 AI Lab（书生团队）开发的多模态视觉语言模型系列，从 2024 年起以开源姿态在多个多模态基准上持续挑战闭源旗舰。本文梳理 InternVL 全系列的演进脉络，**重点解读最新的 InternVL 3.5 版本**（2025.8），涵盖其架构创新、训练策略与性能表现。
+
+> 更新时间：2026-04-13
 
 ---
 
-## 一、系列概述与演进脉络
+## 一、系列演进概览
 
-### 1.1 系列定位
-
-InternVL 系列是一个以"开源对齐闭源"为目标的多模态大模型项目，核心思路是：
-
-> 用自研的大型视觉编码器（InternViT）+ 动态分辨率策略 + 精心设计的多模态数据工程，在不依赖闭源基础设施的前提下，追平甚至超越 GPT-4V 等闭源模型。
-
-### 1.2 演进脉络
+### 1.1 版本脉络
 
 ```
-InternVL 1.0 (2023)       → 初版，探索大视觉编码器可行性
-    │                         InternViT-6B (ViT-6B 级别)
-    │                         验证大视觉编码器在 VLM 中的价值
-    │
-InternVL 1.5 (2024.4)     → 工程完善版
-    │                         Dynamic High-Resolution 策略
-    │                         三阶段训练流程固化
-    │                         在 OCR/DocVQA 等任务上大幅领先
-    │
-InternVL 2.0 (2024.7)     → 规模化 + 多模态扩展
-    │                         Progressive Scaling（2B/4B/8B/26B/40B/76B 全系列）
-    │                         多图像 + 视频输入支持
-    │                         精细化数据配比策略
-    │
-InternVL 2.5 (2024.12)    → 性能对齐闭源旗舰
-                              架构微调 + 训练策略深化
-                              在 MMMU/MathVista/OCRBench 上追平 GPT-4o
+InternVL 1.0 (2023.12)    → 初版，验证大视觉编码器可行性
+InternVL 1.5 (2024.4)     → 动态高分辨率策略，OCR/文档能力飞跃
+InternVL 2.0 (2024.7)     → 全系列规模化（2B~76B），多图+视频支持
+InternVL 2.5 (2024.12)    → 精细化改进，静态图像任务追平 GPT-4o
+InternVL 3.0 (2025.4)     → 原生多模态预训练，引入 RL 对齐
+InternVL 3.5 (2025.8)     → Cascade RL + 动态压缩，整体追平 GPT-5 ★
 ```
 
-### 1.3 核心数据对比（各版本旗舰）
+### 1.2 旗舰模型 Benchmark 演进
 
-| 版本 | 最大参数 | MMBench | MMMU | MathVista | OCRBench |
+| 版本 | 最大参数 | MMMU | MathVista | OCRBench | 对标模型 |
 |---|---|---|---|---|---|
-| InternVL 1.5 | 26B | 82.2 | 46.8 | 53.5 | 724 |
-| InternVL 2.0 | 76B | 86.5 | 55.2 | 67.3 | 794 |
-| InternVL 2.5 | 78B | 88.9 | 70.1 | 76.6 | 822 |
-| GPT-4o (参照) | 未公开 | 83.4 | 69.9 | 63.8 | 736 |
-
-> 注：表中数据来自各版本技术报告原文，部分 benchmark 设置不同，仅供参考。
+| InternVL 1.5 | 26B | 46.8 | 53.5 | 724 | GPT-4V |
+| InternVL 2.0 | 76B | 55.2 | 67.3 | 794 | GPT-4V |
+| InternVL 2.5 | 78B | 70.1 | 76.6 | 822 | GPT-4o |
+| InternVL 3.0 | 72B | ~72 | ~78 | ~860 | GPT-4o |
+| **InternVL 3.5** | **241B(A28B)** | **77.7** | **82.7** | **907** | **GPT-5** |
 
 ---
 
-## 二、InternVL 1.5 技术解读
+## 二、早期版本核心创新回顾（1.5 / 2.0 / 2.5）
 
-### 2.1 核心问题与设计目标
+> 本节精简呈现早期版本的关键技术贡献，详细技术细节可参阅各版本技术报告原文。
 
-InternVL 1.5 要解决的核心问题是：**如何让 VLM 处理高分辨率、密集文字的图像（如文档、图表、截图）？**
+### 2.1 InternVL 1.5：动态高分辨率 + 大视觉编码器
 
-早期 VLM（LLaVA 等）将图像缩放到固定分辨率（如 336×336），大量细节丢失，导致 OCR、DocVQA、ChartQA 等任务表现很差。1.5 版本通过三项核心设计解决这个问题。
+**解决的核心问题**：早期 VLM 将图像缩放到固定 336×336，OCR/文档任务细节大量丢失。
 
-### 2.2 核心设计一：Dynamic High-Resolution（动态高分辨率）
+**两大核心创新**：
 
-**为什么需要动态分辨率？**
-
-固定分辨率的问题：
-- 高分辨率图像（文档、图表）被压缩后细节消失
-- 低分辨率图像（自然图片）用高分辨率处理则浪费算力
-- 不同宽高比的图像被强制裁剪会破坏语义
-
-**怎么实现的？**
-
-InternVL 1.5 采用了"动态分块"（Dynamic Tiling）策略：
+**① Dynamic Tiling（动态分块）**
 
 ```
-输入图像
-    │
-    ├── 计算图像宽高比和像素数
-    │       ↓
-    ├── 从候选分辨率集合中选最匹配的分辨率方案
-    │   候选方案示例: 1×1, 1×2, 2×1, 2×2, 3×1, 1×3, ... 最多 n×m
-    │       ↓
-    ├── 将图像裁剪/填充后切分为若干 448×448 的图块（Tiles）
-    │       ↓
-    ├── 每个 Tile 独立通过 InternViT-6B 提取特征（每 Tile → 256 tokens）
-    │       ↓
-    ├── 加入一张缩略图（Thumbnail）保留全局语义
-    │       ↓
-    └── 所有 Tile 特征拼接 → 输入 LLM
+输入图像 → 根据宽高比选最优分块方案（如 3×2）
+         → 切分为若干 448×448 Tiles
+         → 每个 Tile 独立过 InternViT 提取特征（256 tokens/Tile）
+         → 加入全局缩略图（Thumbnail）保留全局语义
+         → 所有 Tile 特征拼接 → 送入 LLM
 ```
 
-**关键参数**：
-- 每个 Tile 大小：448×448 像素
-- 每个 Tile 的视觉 tokens：256
-- 最大 Tile 数：默认 12（可调），即最高 12×256 = 3072 个视觉 tokens
-- Thumbnail 始终保留：1 个全局 Tile（256 tokens）
+- 每 Tile 448×448，默认最多 12 Tiles，视觉 tokens 最高 3328
+- 缩略图保证局部细节 + 全局语义兼顾
 
-**和固定分辨率的对比**：
+**② InternViT-6B（自研大视觉编码器）**
 
-| 方案 | 分辨率上限 | OCRBench | DocVQA | 计算开销 |
+- ~6B 参数的 ViT，远超 CLIP ViT-L（~300M）
+- 45 层 Transformer，3200 维特征，Patch Size 14×14
+- 通过 Pixel Shuffle（Pixel Unshuffle r=2）将 1024 tokens 零信息损失压缩到 256 tokens
+- 消融实验证明：视觉编码器 300M→6B（20×），MMMU 提升 5.6 分，OCRBench 提升 109 分
+
+**③ 三阶段训练**：MLP 对齐预训练 → 全参数训练（解冻 ViT）→ 指令微调（SFT）
+
+### 2.2 InternVL 2.0：全系列规模化
+
+**核心贡献**：
+
+- **Progressive Scaling**：2B/4B/8B/26B/40B/76B 全系列统一架构，小模型先探索超参，大模型继承
+- **多图 + 视频输入**：多图 token 顺序拼接 + 特殊分隔符；视频均匀抽帧（8~32 帧），每帧走动态分辨率
+- **精细化数据配比**：SFT 约 1200 万条，系统实验了多任务数据平衡点，解决多任务遗忘问题
+- **数据质量控制**：GPT-4o 辅助标注约 30%，CoT 数据初步引入
+
+### 2.3 InternVL 2.5：追平 GPT-4o
+
+**核心改进**：
+
+- **InternViT-6B v2.5**：预训练引入高分辨率图像 + ITC-Dense（区域级对比），增强细粒度定位
+- **MLP Projector 加入 LayerNorm**：归一化视觉特征尺度，防止破坏 LLM 激活分布
+- **渐进式分辨率预热**：Stage 2 中从 1 Tile 逐渐增到 12 Tiles，训练更稳定
+- **数据课程学习**：Easy→Medium→Hard（5:3:2），SFT 约 1600 万条，CoT 数据占 15%
+- **结果**：在 MMMU(70.1)、MathVista(76.6)、OCRBench(822) 上追平甚至超越 GPT-4o
+
+### 2.4 Tile 间无注意力——早期架构的核心局限
+
+InternVL 1.5~2.5 的一个关键架构特点：**不同 Tile 之间在 ViT 内无交互**，跨 Tile 信息融合完全依赖 LLM。
+
+```
+优势: 计算可并行、显存线性增长、灵活性高
+劣势: Tile 边界物体被截断、LLM 负担重、位置编码有歧义
+```
+
+对比 Qwen2-VL 的 NaViT 方案（全局 self-attention、M-RoPE 3D 位置编码），InternVL 的 Tile 隔离方案在空间推理上有天然劣势，但凭借 6B 视觉编码器的特征质量弥补。
+
+---
+
+## 三、InternVL 3.0：原生多模态预训练的范式转换
+
+> InternVL 3.0（2025.4，arXiv:2504.10479）是从传统"文本 LLM 适配多模态"到"原生多模态预训练"的关键转折。
+
+### 3.1 训练范式变革
+
+**传统范式（1.5~2.5）**：先训练纯文本 LLM → 冻结/解冻 ViT 做多模态对齐 → SFT
+
+**原生多模态预训练（3.0 起）**：文本和多模态数据从一开始就联合训练
+
+```
+Stage 1: 原生多模态预训练（CPT）
+  数据: ~200B tokens（文本:多模态 ≈ 1:3）
+  所有模块同时训练（ViT + MLP + LLM）
+  → 视觉和语言能力从底层就协同发展
+
+Stage 2: 指令微调（SFT）
+  数据: ~2170 万条
+  
+Stage 3: 偏好优化（MPO）
+  Mixed Preference Optimization
+  L_MPO = w_p × L_DPO + w_q × L_NLL(rejected) + w_g × L_NLL(chosen)
+```
+
+### 3.2 关键技术引入
+
+- **V2PE（Variable Visual Position Encoding）**：为视觉 tokens 分配更灵活的位置增量，替代固定位置 ID
+- **MPO（Mixed Preference Optimization）**：DPO + BCO + LM Loss 的混合偏好优化
+- **LLM 底座切换**：从 InternLM 切换到 **Qwen2.5** 系列
+- **测试时缩放**：支持深度思考（sequential CoT）和并行思考（Best-of-N + VisualPRM 打分）
+
+---
+
+## 四、InternVL 3.5 技术深度解读 ★
+
+> InternVL 3.5（2025.8，arXiv:2508.18265）是当前最新版本，在 3.0 的基础上引入 Cascade RL、动态视觉压缩、解耦部署等创新，**整体性能追平 GPT-5**。
+
+### 4.1 架构概览
+
+基础架构保持 **ViT-MLP-LLM** 三段式，但各组件全面升级：
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  InternVL 3.5 架构                                      │
+│                                                         │
+│  视觉编码器: InternViT-300M (小模型) / InternViT-6B (大模型)│
+│       ↓                                                │
+│  MLP Projector (含 LayerNorm)                           │
+│       ↓                                                │
+│  ViR (Visual Resolution Router) ← 3.5 新增              │
+│       ↓ 动态压缩视觉 tokens                              │
+│  LLM: Qwen3 系列 (0.6B ~ 235B-A22B)                    │
+│       ↓                                                │
+│  输出（支持思考模式 <think>...</think>）                   │
+└─────────────────────────────────────────────────────────┘
+```
+
+### 4.2 全系列模型配置
+
+InternVL 3.5 提供 Dense 和 MoE 两种架构，覆盖 1B 到 241B：
+
+| 模型 | 视觉编码器 | LLM 底座 | 总参数 |
+|---|---|---|---|
+| InternVL3.5-1B | InternViT-300M | Qwen3-0.6B | 1.06B |
+| InternVL3.5-2B | InternViT-300M | Qwen3-1.7B | 2.35B |
+| InternVL3.5-4B | InternViT-300M | Qwen3-4B | 4.73B |
+| InternVL3.5-8B | InternViT-300M | Qwen3-8B | 8.53B |
+| InternVL3.5-14B | InternViT-300M | Qwen3-14B | 15.12B |
+| InternVL3.5-38B | **InternViT-6B** | Qwen3-32B | 38.40B |
+| InternVL3.5-20B-A4B (MoE) | InternViT-300M | Qwen3-30B-A3B | 21.23B |
+| InternVL3.5-30B-A3B (MoE) | InternViT-300M | Qwen3-30B-A3B | 30.85B |
+| **InternVL3.5-241B-A28B** (MoE) | **InternViT-6B** | Qwen3-235B-A22B | **240.70B** |
+
+**关键变化**：
+- LLM 底座从 InternLM → Qwen2.5（3.0）→ **Qwen3**（3.5），追踪最强开源 LLM
+- 小模型（≤14B）统一使用 InternViT-300M 而非 6B，平衡效率
+- 新增 MoE 版本，旗舰 241B 模型激活参数仅 28B
+
+### 4.3 核心创新一：Cascade RL（级联强化学习）
+
+这是 InternVL 3.5 最重要的训练创新，**推理能力平均提升 16%**。
+
+**为什么需要级联？**
+
+单独使用在线 RL（如 GRPO）容易出现奖励作弊（reward hacking）和训练不稳定；单独使用离线 RL（如 DPO）则探索能力不足。Cascade RL 结合两者优势：
+
+```
+Stage 3a: 离线 RL — MPO（Mixed Preference Optimization）
+  数据: ~200K 偏好对（MMPR v1.2 数据集）
+  损失: L_MPO = w_p × L_DPO + w_q × L_NLL(rejected) + w_g × L_NLL(chosen)
+  作用: 稳定基础对齐，防止奖励作弊
+  输出: 稳定的 MPO checkpoint
+         ↓
+
+Stage 3b: 在线 RL — GSPO（Generalized Self-Play Optimization）
+  初始化: 从 MPO checkpoint 开始
+  数据: ~70K 查询（MMPR-Tiny）
+  特点: 
+    - 类似 GRPO 但无参考模型约束
+    - 仅选取准确率在 0.2~0.8 之间的查询（太简单或太难的跳过）
+    - 同时适用于 Dense 和 MoE 架构
+  作用: 在稳定基础上进一步精细化对齐
+```
+
+**效果量化**：
+
+| 训练阶段 | 推理 Benchmark 平均分 |
+|---|---|
+| SFT-only (InternVL3.5-8B) | ~52 |
+| + MPO (离线 RL) | ~56 (+4) |
+| + GSPO (在线 RL，从 MPO 初始化) | **~60 (+8)** |
+| 直接用 GSPO (跳过 MPO) | ~54（不稳定，低于级联方案） |
+
+> 关键发现：离线 MPO 提供稳定起点，在线 GSPO 在此基础上精细优化。级联方案比单独使用任一方法都更优。
+
+### 4.4 核心创新二：ViR（Visual Resolution Router）
+
+**解决的问题**：Dynamic Tiling 生成大量视觉 tokens（12 Tiles × 256 = 3072），但并非所有区域都需要高分辨率表示。
+
+**ViR 的核心思路**：为每个 Tile 动态决定压缩率——语义丰富的区域保留更多 tokens，简单背景区域大幅压缩。
+
+```
+标准模式 (无 ViR):
+  每 Tile → Pixel Shuffle r=2 → 256 tokens（固定）
+
+Flash 模式 (带 ViR):
+  每 Tile → ViR Router 判断语义复杂度
+          → 复杂区域: Pixel Shuffle r=2 → 256 tokens（保留）
+          → 简单区域: Pixel Shuffle r=4 → 64 tokens（压缩）
+  
+  平均效果: 减少约 50% 视觉 tokens
+```
+
+**Router 的训练方式**：
+
+ViR 的 Router 标签来自 ViCO（Visual Consistency Learning）的损失比：
+
+```
+对于每个 Tile i:
+  r_i = L_ViCO(y_i | 高压缩率) / L_ViCO(y_i | 低压缩率)
+
+  r_i 大 → 高压缩会严重损失信息 → 保留高分辨率（256 tokens）
+  r_i 小 → 高压缩影响不大        → 使用低分辨率（64 tokens）
+
+  阈值 τ 控制压缩比例
+```
+
+### 4.5 核心创新三：ViCO（Visual Consistency Learning）
+
+**目的**：让模型在不同压缩率下保持输出一致性，为 ViR 的动态压缩提供基础。
+
+```
+训练过程:
+  同一张图像，用两种压缩率（r=2 即 1/4 和 r=4 即 1/16）分别前向传播
+  
+  L_ViCO = KL(P(y | I_1/4) || P(y | I_1/16))
+  
+  最小化 KL 散度 → 模型学会在低分辨率下也能给出接近高分辨率的回答
+  
+训练后:
+  用 ViCO 损失比训练 Router 标签（见上节）
+```
+
+**两阶段流程**：
+1. **一致性训练**：用 ViCO 损失训练模型对不同压缩率的鲁棒性
+2. **Router 训练**：根据 ViCO 损失比生成标签，训练 ViR Router
+
+### 4.6 核心创新四：DvD（Decoupled Vision-Language Deployment）
+
+**解决的问题**：视觉编码器和 LLM 的计算特性不同（ViT 是固定计算，LLM 是自回归），放在同一 GPU 会造成资源浪费。
+
+```
+传统部署:
+  [GPU] ViT + MLP + LLM → 所有组件共享 GPU 资源
+
+DvD 部署:
+  [GPU 1] ViT + MLP + ViR    → 视觉处理专用
+       ↓ 单向 TCP 传输 (BF16 visual features)
+  [GPU 2~N] LLM              → 语言生成专用
+
+  异步 3 阶段流水线:
+    Stage A: 预填充视觉 tokens (ViT)
+    Stage B: 预填充文本 tokens (LLM)
+    Stage C: 自回归解码 (LLM)
+    
+  → A 和 B/C 可异步执行，提高吞吐量
+```
+
+### 4.7 完整训练流程
+
+InternVL 3.5 采用 4 阶段训练（Flash 模型为 5 阶段）：
+
+```
+Stage 1: 持续预训练（CPT）
+  ├── 数据: ~116M 样本，~250B tokens
+  ├── 文本:多模态 ≈ 1:2.5
+  ├── 损失: NTP (Next Token Prediction)，平方根平均
+  ├── 所有模块可训练（ViT + MLP + LLM）
+  └── 与 3.0 一致的原生多模态预训练
+
+Stage 2: 指令微调（SFT）
+  ├── 数据: ~56M 样本，~130B tokens
+  ├── 文本:多模态 ≈ 1:3.5
+  ├── 上下文长度: 32K
+  ├── 新增数据类型: 思考模式、GUI 交互、具身智能、SVG
+  └── 远超 2.5 的 16M 规模
+
+Stage 3: 级联 RL
+  ├── Stage 3a: 离线 MPO（~200K 偏好对）
+  └── Stage 3b: 在线 GSPO（~70K 查询）
+
+Stage 4: ViCO + ViR（仅 Flash 模型）
+  ├── 一致性学习
+  └── Router 训练
+```
+
+**数据规模对比**：
+
+| 维度 | InternVL 2.5 | InternVL 3.0 | InternVL 3.5 |
+|---|---|---|---|
+| 预训练 tokens | ~100B | ~200B | ~250B |
+| SFT 样本数 | ~16M | ~21.7M | **~56M** |
+| RL 数据 | 无 | ~200K (MPO) | ~200K (MPO) + ~70K (GSPO) |
+| SFT 新增类型 | CoT | V2PE | 思考模式/GUI/具身/SVG |
+
+### 4.8 新能力
+
+**① 思考模式（Thinking Mode）**
+
+支持 `<think>...</think>` 标签的深度推理，通过系统提示激活：
+
+```
+系统提示: "请在回答前先进行深入思考，用 <think> 标签包裹思考过程"
+
+模型输出:
+<think>
+这道几何题需要...
+首先观察到三角形ABC中...
+根据勾股定理...
+</think>
+
+答案是 ...
+```
+
+**② 测试时缩放（Test-Time Scaling）**
+
+- **深度思考**：延长推理链（Sequential CoT），更多思考步骤
+- **并行思考**：Best-of-N 采样 + VisualPRM v1.1 打分器选最优
+
+**③ GUI 交互与 Agent 能力**
+
+- ScreenSpot-v2: 92.9（GUI 元素定位）
+- OSWorld-G: 53.2（桌面操作系统交互）
+
+**④ 3D 空间理解**
+
+- VSI-Bench: 63.7~69.5（3D 空间推理）
+
+**⑤ SVG 理解与生成**
+
+- SGP-Bench 上表现优异
+
+### 4.9 Benchmark 全面评测
+
+**旗舰模型对比（InternVL3.5-241B-A28B）**：
+
+| Benchmark | InternVL 3.5-241B | GPT-5 | GPT-4o | Qwen2.5-VL-72B |
 |---|---|---|---|---|
-| 固定 336×336 | 336px | ~500 | ~60% | 256 tokens/图 |
-| 固定 448×448 | 448px | ~600 | ~72% | 256 tokens/图 |
-| Dynamic (最大 6 tiles) | ~1344×1344 | ~680 | ~82% | 256~1792 tokens/图 |
-| Dynamic (最大 12 tiles) | ~2016×1344 | ~724 | ~87% | 256~3328 tokens/图 |
+| **MMMU** | 77.7 | 84.2 | 69.9 | 68.2 |
+| **MathVista** | **82.7** | 81.9 | 63.8 | 74.2 |
+| **OCRBench** | **90.7** | 80.7 | 73.6 | 88.5 |
+| MMBench | 87.4 | 88.6 | 83.4 | — |
+| MMStar | **77.9** | 75.7 | — | — |
+| AIME24 | 84.7 | 90.0 | — | — |
+| MMLU-Pro | 81.3 | 85.6 | — | — |
+| Video-MME | 72.9 | 81.8 | 77.2 | — |
+| ScreenSpot-v2 | **92.9** | — | — | — |
 
-**优势**：分辨率随需适配，保留细节的同时不浪费低分辨率图像的算力；宽高比灵活，不会破坏文档、长图的语义。
+**综合评分**：InternVL3.5-241B-A28B 整体 74.1 vs GPT-5 的 74.0，**开源首次追平 GPT-5 级别**。
 
-### 2.3 核心设计二：视觉编码器选择 InternViT-6B
+**各尺寸模型表现**：
 
-InternVL 系列坚持使用自研的 **InternViT-6B**，而非 CLIP 系的视觉编码器（如 CLIP ViT-L/14 ~300M 参数）。
-
-**为什么不用 CLIP ViT-L？**
-
-1. **参数量差距悬殊**：CLIP ViT-L 仅 ~300M 参数，对于文档、图表、专业图像的细粒度特征提取能力有限
-2. **预训练目标局限**：CLIP 使用图文对比学习（ITC），对视觉细节的编码能力不如专为高分辨率设计的 ViT
-3. **规模效应**：InternViT-6B 通过大幅扩大视觉编码器参数量，获得了更强的视觉表征能力
-
-**InternViT-6B 规格**：
-
-```
-架构: ViT (Vision Transformer)
-参数: ~6B
-图块大小 (Patch Size): 14×14
-输入分辨率: 448×448（单 Tile）
-每 Tile 输出 tokens: (448/14)² = 1024 → Pixel Shuffle 下采样 4× → 256 tokens
-特征维度: 3200
-层数: 45 层（Transformer Encoder）
-注意力头: 25
-```
-
-**Pixel Shuffle 压缩**：
-
-视觉编码器输出 1024 个 tokens 过多，直接送入 LLM 代价太高。InternVL 采用 Pixel Shuffle（类似 ESRGAN 的 Sub-Pixel Convolution）将 `H×W×C` 重排为 `(H/2)×(W/2)×(4C)`，再通过 MLP 投影，把 1024 tokens 压缩到 256 tokens，同时保留空间信息。
-
-**与主流 CLIP 编码器对比**：
-
-| 编码器 | 参数量 | 输出 tokens (per tile) | 来源 |
+| 模型 | MMMU | OCRBench | MathVista |
 |---|---|---|---|
-| CLIP ViT-L/14 @336 | ~300M | 576 | OpenAI |
-| CLIP ViT-L/14 @448 | ~300M | 1024 | OpenAI |
-| InternViT-6B | ~6B | 256 (after Pixel Shuffle) | 上海 AI Lab |
-| SigLIP-400M | ~400M | 729 | Google |
+| InternVL3.5-1B | 44.2 | 795 | — |
+| InternVL3.5-2B | 59.0 | 836 | — |
+| InternVL3.5-8B | 73.4 | 832 | 78.4 |
+| InternVL3.5-30B-A3B (MoE) | 75.6 | 880 | 80.9 |
+| InternVL3.5-38B | 76.9 | — | — |
+| InternVL3.5-241B-A28B | 77.7 | 907 | 82.7 |
 
-### 2.4 核心设计三：三阶段训练流程
+**InternVL 3.5 vs 3.0 推理能力提升**：
+
+| 模型 | InternVL 3.0 | InternVL 3.5 | 提升 |
+|---|---|---|---|
+| 2B 推理平均分 | 32.4 | 50.7 | **+18.3** |
+| 8B 推理平均分 | 44.3 | 60.3 | **+16.0** |
+
+> Cascade RL 是推理能力大幅跃升的主因。
+
+**InternVL 3.5 优于 GPT-5 的领域**：MathVista、OCRBench、MMStar
+**GPT-5 仍领先的领域**：MMMU、AIME24、Video-MME、MMLU-Pro
+
+### 4.10 Flash 模式效率分析
+
+ViR + ViCO 带来的推理加速效果：
 
 ```
-Stage 1: 视觉-语言对齐预训练
-    数据: 图文对（图像描述类），约 1B 数据量
-    目标: 训练 MLP 投影层，让视觉特征和语言空间对齐
-    冻结: InternViT（不参与训练）
-    更新: MLP Projector + LLM
-    ↓
+InternVL3.5-8B 标准模式:
+  12 Tiles × 256 tokens = 3072 视觉 tokens
+  推理延迟: 1.0x
 
-Stage 2: 视觉编码器解冻继续训练
-    数据: 更多高质量图文数据，引入 Interleaved 图文数据
-    目标: 让视觉编码器和语言模型协同优化
-    冻结: 无（全参数训练）
-    更新: InternViT + MLP Projector + LLM
-    ↓
-
-Stage 3: 指令微调（SFT）
-    数据: 多任务指令数据（VQA、OCR、Chart、Math、对话等）
-    目标: 提升指令跟随能力，针对各类任务优化
-    方式: 全参数 SFT 或 LoRA
+InternVL3.5-8B Flash 模式:
+  ViR 动态压缩后: ~1500 视觉 tokens（平均减少 ~50%）
+  推理延迟: ~0.25x（4.05x 加速）
+  性能损失: <1%（在大多数 Benchmark 上）
 ```
-
-**1.5 版本关键训练数据**：
-
-| 数据类型 | 比例 | 代表数据集 |
-|---|---|---|
-| 通用图文对 | ~40% | LAION、CC12M 等 |
-| OCR/文档 | ~20% | IIT-CDIP、DocVQA 训练集 |
-| 图表/数学 | ~15% | ChartQA、MathVista 训练集 |
-| 自然图像 VQA | ~15% | VQAv2、GQA |
-| 对话/指令 | ~10% | ShareGPT4V、LLaVA-Instruct |
 
 ---
 
-## 三、InternVL 2.0 技术解读
+## 五、与其他 VLM 的技术对比（更新版）
 
-### 3.1 版本目标：全系列规模化
+### 5.1 架构路线对比
 
-InternVL 2.0 的核心目标是**从单一大模型扩展为全系列模型矩阵**，覆盖 2B 到 76B 的所有规模，让用户根据场景选择合适尺寸。
-
-### 3.2 Progressive Scaling（渐进式规模扩展）
-
-**全系列架构配置**：
-
-| 规格 | 视觉编码器 | 语言模型 | 总参数 |
+| 维度 | InternVL 3.5 | Qwen2.5-VL | LLaVA-OneVision |
 |---|---|---|---|
-| InternVL2-2B | InternViT-300M | InternLM-2-1.8B | ~2B |
-| InternVL2-4B | InternViT-300M | Phi-3-mini-3.8B | ~4B |
-| InternVL2-8B | InternViT-300M | InternLM-2-7B | ~8B |
-| InternVL2-26B | InternViT-6B | InternLM-2-20B | ~26B |
-| InternVL2-40B | InternViT-6B | Qwen2-38B | ~40B |
-| InternVL2-76B | InternViT-6B | InternLM-2.5-72B-Chat | ~76B |
+| 视觉编码器 | InternViT (300M/6B) | ViT-600M (NaViT) | CLIP ViT-L (~300M) |
+| 动态分辨率 | Dynamic Tiling + Thumbnail | Naive Dynamic (原生变长) | AnyRes |
+| Tile 间交互 | 无（ViT 内隔离） | **全局 self-attention** | 无 |
+| 位置编码 | 1D RoPE + V2PE | **M-RoPE (3D)** | 1D RoPE |
+| Token 压缩 | Pixel Shuffle + **ViR 动态** | 2×2 merging | 无 |
+| LLM 底座 | Qwen3 | Qwen2.5 | LLaMA-3 |
+| RL 对齐 | **Cascade RL (MPO+GSPO)** | DPO | 无 |
+| 思考模式 | ✅ | ✅ | ❌ |
+| MoE 支持 | ✅ (241B-A28B) | ❌ | ❌ |
 
-**渐进式训练策略**：
+### 5.2 核心差异分析
 
-大模型的训练不从头开始，而是基于小模型的已有 checkpoint：
-
-```
-InternVL2-2B → 验证数据配比和训练代码
-    ↓
-InternVL2-8B → 中等规模基准
-    ↓
-InternVL2-26B → 大规模参数下的 scaling 效果
-    ↓
-InternVL2-76B → 旗舰，对标 GPT-4V
-```
-
-这种方式降低了训练成本：小模型先探索最优超参和数据配比，大模型再继承。
-
-### 3.3 多模态数据配比策略
-
-InternVL 2.0 技术报告中详细披露了 SFT 阶段的数据配比策略，这是 2.0 最重要的工程贡献之一。
-
-**核心发现**：不同任务的数据量有一个最优平衡点，盲目增加某类数据会导致其他能力退化（**多任务遗忘问题**）。
-
-**2.0 SFT 数据组成**（以 76B 为例，总量约 1200 万条）：
-
-| 数据类别 | 占比 | 关键考量 |
-|---|---|---|
-| 通用视觉对话 | ~25% | 保证基础问答能力 |
-| OCR 与文档理解 | ~20% | InternVL 的强项，重点保持 |
-| 数学与科学图像 | ~15% | MathVista 等任务的核心 |
-| 图表/表格理解 | ~12% | ChartQA、TabMWP 等 |
-| 视频理解 | ~10% | 新增多帧输入能力 |
-| 多图对话 | ~8% | 图像比较/多图推理 |
-| 纯文本 NLP | ~10% | 防止语言能力退化 |
-
-**数据质量控制**：
-
-- 使用 GPT-4o 等强模型重新标注部分低质量数据
-- 去除重复、低质图文对
-- 对数学类数据做格式统一（LaTeX 格式规范化）
-- 负采样：对数量过多的类别降采样，避免占主导
-
-### 3.4 多图像与视频输入
-
-InternVL 2.0 正式支持多图输入和视频输入，这是相较 1.5 的重大扩展。
-
-**多图输入实现**：
-
-```python
-# 多张图像的 token 排列方式
-[IMG1 tokens] [IMG2 tokens] [IMG3 tokens] [Text tokens]
-
-# 每张图依然走动态分辨率的 Tiling
-# 多张图的 Tile tokens 顺序拼接
-# 通过特殊分隔符区分不同图像
-```
-
-**视频输入实现**：
+**InternVL 3.5 vs Qwen2.5-VL**：
 
 ```
-视频抽帧策略:
-  - 均匀采样（默认）: 等间距抽取 N 帧（N=8~32 可配置）
-  - 动态采样: 根据视频长度自适应调整帧数
-  - 每帧视为一张图像，走动态分辨率处理
-  - 所有帧的 tokens 顺序拼接
-
-帧数与 token 数的权衡:
-  8 帧  × 256 tokens/帧 = 2048 视觉 tokens
-  16 帧 × 256 tokens/帧 = 4096 视觉 tokens
-  32 帧 × 256 tokens/帧 = 8192 视觉 tokens
-```
-
-**位置编码一致性**：多帧输入时，每帧的空间位置编码独立，帧间通过时序位置信息区分，保持空间语义的准确性。
-
----
-
-## 四、InternVL 2.5 技术解读
-
-### 4.1 架构改进
-
-InternVL 2.5 在 2.0 的基础上做了多项精细化改进：
-
-**视觉编码器更新（InternViT-6B v2.5）**：
-
-- 更新了预训练数据，加入更多高质量图文对
-- 在预训练阶段直接引入高分辨率图像（而不是仅在 SFT 阶段才用动态分辨率），让编码器对高分辨率图像具备更好的泛化能力
-- 改进了 InternViT 的训练目标：从纯 ITC（图文对比）改为 ITC + ITC-Dense（区域级对比），增强了细粒度定位能力
-
-**语言模型升级**：
-
-| 规格 | 2.0 语言模型 | 2.5 语言模型 |
-|---|---|---|
-| ~2B | InternLM-2-1.8B | InternLM-3-2B（更新指令版） |
-| ~8B | InternLM-2-7B | InternLM-3-8B |
-| ~38B | Qwen2-38B | InternLM-3-38B |
-| ~78B | InternLM-2.5-72B | InternLM-3-72B |
-
-**MLP Projector 结构升级**：
-
-```
-2.0: Linear → GELU → Linear（两层 MLP）
-2.5: Linear → GELU → Linear → LayerNorm（加入归一化层）
-
-归一化的作用: 防止视觉特征尺度过大破坏 LLM 的激活分布
-```
-
-### 4.2 训练策略优化
-
-**渐进式分辨率预热（Progressive Resolution Warmup）**：
-
-2.5 引入了一个新的预训练技巧：在 Stage 2 中，先用低分辨率（单 Tile）训练，再逐渐增大最大 Tile 数，让模型先学会基础视觉语言对齐，再适配高分辨率。
-
-```
-Stage 2 预训练:
-  Step 1: 最大 1 Tile（448×448），训练 N1 步
-  Step 2: 最大 4 Tiles，训练 N2 步
-  Step 3: 最大 12 Tiles，训练 N3 步
-  
-  效果: 比直接用最大分辨率训练稳定，loss 曲线更平滑
-```
-
-**数据课程学习（Data Curriculum）**：
-
-SFT 阶段按照难度组织数据：
-
-```
-阶段 1（Easy）: 
-  - 简单图文对、清晰 OCR、基础 VQA
-  - 约 50% 数据量
-  
-阶段 2（Medium）:
-  - 多步推理、图表分析、数学题
-  - 约 30% 数据量
-
-阶段 3（Hard）:
-  - 多图推理、复杂文档、竞赛数学
-  - 约 20% 数据量
-```
-
-**Chain-of-Thought 强化**：
-
-2.5 专门增加了 CoT 数据的比例，鼓励模型对复杂视觉推理问题给出步骤性回答，而不是直接输出答案。这对 MathVista 等推理型 benchmark 效果显著（从 67.3 提升到 76.6）。
-
-### 4.3 与 GPT-4o 的对比
-
-**核心 Benchmark 对比（2.5 旗舰 78B vs GPT-4o）**：
-
-| Benchmark | InternVL 2.5-78B | GPT-4o | 说明 |
-|---|---|---|---|
-| MMMU (val) | 70.1 | 69.9 | 综合多学科视觉理解 |
-| MathVista | 76.6 | 63.8 | 数学图像推理 |
-| OCRBench | 822 | 736 | OCR 综合测评 |
-| DocVQA | 95.1 | 92.8 | 文档理解 |
-| ChartQA | 89.4 | 85.7 | 图表理解 |
-| MMBench | 88.9 | 83.4 | 多维度视觉问答 |
-| Video-MME | 72.1 | 77.2 | 视频理解（GPT-4o 领先） |
-
-**InternVL 2.5 优于 GPT-4o 的领域**：OCR、文档理解、数学图像、图表分析  
-**GPT-4o 仍领先的领域**：视频理解、多步长推理对话、复杂场景描述
-
-**开源 vs 闭源的本质差距缩小**：
-
-InternVL 2.5 的出现标志着，在静态图像理解任务上，开源 VLM 已经基本追平甚至超越闭源旗舰。差距主要残留在：
-1. 视频长序列理解（需要更长的时序建模）
-2. 指令跟随的鲁棒性（闭源模型的 RLHF 数据质量更高）
-3. 安全性与拒绝有害内容的能力
-
----
-
-## 五、关键技术深入
-
-### 5.1 Dynamic Resolution：完整技术分析
-
-**核心算法**（伪代码）：
-
-```python
-def dynamic_preprocess(image, min_num=1, max_num=12, image_size=448):
-    orig_w, orig_h = image.size
-    aspect_ratio = orig_w / orig_h
-    
-    # 生成候选分辨率（列、行的组合）
-    target_ratios = set()
-    for n in range(min_num, max_num + 1):
-        for i in range(1, n + 1):
-            for j in range(1, n + 1):
-                if i * j <= max_num and i * j >= min_num:
-                    target_ratios.add((i, j))
-    
-    # 选最接近原始宽高比的方案
-    best_ratio = min(target_ratios,
-                     key=lambda r: abs(r[0]/r[1] - aspect_ratio))
-    
-    target_w = image_size * best_ratio[0]
-    target_h = image_size * best_ratio[1]
-    
-    # Resize + 切分为 (best_ratio[0] * best_ratio[1]) 个 Tiles
-    resized = resize(image, (target_w, target_h))
-    tiles = split_into_tiles(resized, image_size)
-    
-    # 加入缩略图
-    thumbnail = resize(image, (image_size, image_size))
-    tiles.append(thumbnail)
-    
-    return tiles  # 每个 tile: (3, 448, 448)
-```
-
-**为什么加 Thumbnail（全局缩略图）？**
-
-纯 Tile 切分会丢失全局语义。例如，一张图被切成 4 块后，每块 Tile 只能看到局部，模型无法理解整体布局。加入全局缩略图让模型同时具备"局部细节"和"全局语义"，对场景描述、图像标题生成等任务至关重要。
-
-**Token 数量的权衡**：
-
-```
-Tile 数量 | 图像分辨率上限 | 视觉 tokens | LLM 计算量（正比于 tokens²）
-1         | 448×448       | 256         | 1x
-4         | 896×896       | 1024        | 4x（含 thumbnail）
-6         | 1344×896      | 1536        | 6x
-12        | 2016×1344     | 3072        | 12x
-```
-
-实际使用中，InternVL 默认 max_tiles=12，但可以根据显存和延迟要求降低。
-
-### 5.2 视觉编码器的选择与缩放
-
-**为什么用自研 InternViT 而不是 CLIP？**
-
-深层原因不只是参数量，而是**预训练目标的根本差异**：
-
-| | CLIP ViT-L | InternViT-6B |
-|---|---|---|
-| 预训练目标 | 图文对比（ITC） | ITC + 图像重建 + 区域级对齐 |
-| 训练数据 | 400M 图文对（WIT） | 数十亿高质量图文对，含中文 |
-| 参数量 | ~300M | ~6B |
-| 特征粒度 | 全局语义 | 全局 + 细粒度局部 |
-| 高分辨率泛化 | 弱（需要插值） | 强（448px 原生训练） |
-
-**Scaling 规律（视觉编码器）**：
-
-InternVL 的技术报告中给出了一个重要发现：在视觉语言模型中，**视觉编码器的规模对性能的影响被系统性低估了**。
-
-```
-实验（控制 LLM 大小相同，只改变视觉编码器）:
-  CLIP ViT-B/16 (86M) + LLaMA-7B → MMMU: 41.2
-  CLIP ViT-L/14 (300M) + LLaMA-7B → MMMU: 44.5
-  InternViT-6B (6000M) + LLaMA-7B → MMMU: 50.1
-  
-结论: 视觉编码器从 300M → 6B（20倍），MMMU 提升 5.6 分
-     LLM 从 7B → 70B（10倍），MMMU 提升约 8-10 分
-     → 视觉编码器的规模效益与 LLM 规模效益相当
-```
-
-**为什么大多数 VLM 仍用小视觉编码器？**
-
-- 工程惯性：CLIP ViT-L 预训练权重开源早、质量高，直接用省力
-- 显存成本：6B 视觉编码器额外占用大量显存
-- 训练难度：大视觉编码器的学习率、梯度裁剪需要更精细调参
-
-InternVL 系列的贡献在于系统地展示了**大视觉编码器的价值**，并提供了可复现的训练流程。
-
-**InternViT-6B 内部架构详解**
-
-InternViT-6B 基于标准 ViT，但在规模和细节上做了大量适配：
-
-```
-┌─────────────────────────────────────────────────────┐
-│  输入处理                                            │
-│  原始图像 (3, 448, 448)                              │
-│      ↓                                              │
-│  Patch Embedding: 14×14 patch, stride=14             │
-│      → (448/14)² = 1024 个 patch                     │
-│      → 每个 patch 线性投影: 14×14×3=588 → 3200 维     │
-│      ↓                                              │
-│  加入可学习绝对位置编码 (Learnable APE)                │
-│      → 1024 个 position embeddings, 每个 3200 维      │
-│      → 注意: 不使用 RoPE, 这意味着分辨率泛化需要位置插值 │
-│      ↓                                              │
-│  加入 [CLS] token → 总计 1025 个 tokens, dim=3200    │
-├─────────────────────────────────────────────────────┤
-│  Transformer Encoder × 45 层                         │
-│  每层:                                              │
-│    LN → MHSA (25 heads, head_dim=128) → Residual    │
-│    LN → FFN (3200→12800→3200, SwiGLU) → Residual    │
-│                                                     │
-│  计算量估算 (单 Tile):                                │
-│    注意力: 2×1025²×3200 ≈ 6.7 GFLOPs/层             │
-│    FFN:   2×1025×3200×12800 ≈ 83.9 GFLOPs/层        │
-│    45 层总计 ≈ ~4.1 TFLOPs/tile                      │
-├─────────────────────────────────────────────────────┤
-│  输出处理                                            │
-│  丢弃 [CLS] → 1024 个 patch tokens                   │
-│      ↓                                              │
-│  Pixel Unshuffle (r=2) → 256 tokens                  │
-│      ↓                                              │
-│  MLP 投影 → 匹配 LLM hidden_dim                      │
-└─────────────────────────────────────────────────────┘
-```
-
-**Tile 间无注意力——核心架构决策**
-
-InternViT 处理多个 Tile 时是**完全独立**的——不同 Tile 之间没有 cross-attention：
-
-```
-图像切成 4 个 Tiles + 缩略图:
-
-  Tile 1 → InternViT → 256 tokens ──┐
-  Tile 2 → InternViT → 256 tokens ──├→ 拼接 → 1280 tokens → LLM
-  Tile 3 → InternViT → 256 tokens ──┤
-  Tile 4 → InternViT → 256 tokens ──┤
-  缩略图  → InternViT → 256 tokens ──┘
-
-每个 Tile 内部: 1024 patches 做 full self-attention
-跨 Tile:       零交互，信息融合完全依赖 LLM
-```
-
-这个设计的权衡：
-- ✅ **计算可并行**：N 个 Tile 可在 GPU 上 batch 处理
-- ✅ **显存线性增长**：N tiles = N × 单 Tile 显存（而非 N² 的二次方增长）
-- ✅ **灵活性**：不同图像可使用不同 Tile 数
-- ❌ **边界切割**：Tile 边界处的物体被截断，ViT 看不到完整对象
-- ❌ **LLM 负担重**：跨 Tile 空间关系理解全部压给 LLM
-- ❌ **位置歧义**：不同 Tile 内的同一相对位置（如左上角 patch）使用相同的位置编码
-
-**对比 Qwen2-VL 的 NaViT 方案**：Qwen 的视觉编码器对所有 patches 做全局 self-attention，不存在 Tile 隔离问题，但计算量随 patch 总数二次方增长。详见本文第六节与 Qwen 技术解读文档。
-
-**Pixel Shuffle 压缩的数学原理**
-
-Pixel Shuffle（也称 Sub-Pixel Convolution）原本用于超分辨率上采样，InternVL 反向使用（Pixel Unshuffle）做下采样：
-
-```
-步骤 1: ViT 输出重排为 2D 特征图
-  1024 个 tokens (3200 维) → 32×32×3200 特征图
-  （因为 448/14 = 32，即 32×32 个 patch 位置）
-
-步骤 2: Pixel Unshuffle (缩放因子 r=2)
-  每 2×2 空间窗口的 4 个向量拼接为 1 个向量:
-  
-  输入: X ∈ R^{32×32×3200}
-  
-  对于位置 (2i, 2j), (2i, 2j+1), (2i+1, 2j), (2i+1, 2j+1):
-    concat → 1 个 3200×4 = 12800 维向量
-  
-  输出: Y ∈ R^{16×16×12800}
-  
-  空间分辨率: 32×32 → 16×16 (÷4)
-  通道数: 3200 → 12800 (×4)
-  总信息量守恒: 32×32×3200 = 16×16×12800 = 3,276,800
-
-步骤 3: MLP 投影到 LLM 隐藏维度
-  Linear(12800 → LLM_hidden_dim) + LayerNorm (v2.5)
-  
-  InternVL2-76B: 12800 → 8192 (InternLM-72B)
-  InternVL2-8B:  12800 → 4096 (InternLM-7B)
-  InternVL2-2B:  12800 → 2048 (InternLM-1.8B)
-
-最终: 16×16 = 256 tokens, 维度 = LLM hidden_dim
-```
-
-**为什么用 Pixel Shuffle 而不是 Pooling？**
-
-| 下采样方法 | 信息保留 | 额外参数 | 细粒度能力 |
-|---|---|---|---|
-| Average Pooling 2×2 | 信息被平均，细节丢失 | 无 | 差（小字符信号被平均掉） |
-| Max Pooling 2×2 | 只保留最显著特征 | 无 | 差（弱信号全部丢失） |
-| Pixel Unshuffle | **零信息损失**（纯重排） | 无 | **强**（所有信息保留到通道维度） |
-| 可学习卷积下采样 | 取决于训练 | 有 | 中（依赖训练数据分布） |
-
-Pixel Unshuffle 的核心优势是**数学上零信息损失**——只是将空间维度的信息"折叠"到通道维度。后续 MLP 投影层通过训练学会从 12800 维中提取 LLM 最需要的信息。这对 OCR 等需要像素级精度的任务至关重要。
-
-**MLP Projector 的演进**
-
-投影层在各版本中逐步改进：
-
-```
-InternVL 1.5:
-  Pixel Unshuffle → Linear(12800, hidden) → GELU → Linear(hidden, hidden)
-  问题: 视觉特征尺度不稳定，偶尔出现激活值爆炸
-
-InternVL 2.0:
-  同上，但加入了梯度裁剪和更小的学习率
-  
-InternVL 2.5:
-  Pixel Unshuffle → Linear(12800, hidden) → GELU → Linear(hidden, hidden) → LayerNorm
-  LayerNorm 的作用:
-    1. 归一化视觉 token 的特征尺度，防止破坏 LLM 的激活分布
-    2. 使不同 Tile 的特征处于相同的数值范围
-    3. 训练更稳定，特别是在高 Tile 数场景下
-```
-
-### 5.3 多模态训练数据工程
-
-**数据质量 vs 数量的权衡**：
-
-InternVL 2.5 技术报告明确指出，数据质量对最终性能的影响远大于数量，并给出了几个关键原则。
-
-#### 5.3.1 完整数据流水线
-
-InternVL 的数据处理从原始收集到最终训练数据，经过多层过滤和增强：
-
-```
-┌──────────────────────────────────────────────────────────┐
-│ 阶段 1: 数据收集 (Data Collection)                        │
-│                                                          │
-│ 来源 A: 公开数据集                                        │
-│   LAION-5B, CC12M, CC3M → 通用图文对 (数十亿量级)         │
-│   IIT-CDIP, RVL-CDIP → 文档图像 (数千万量级)              │
-│   ChartQA, PlotQA → 图表数据 (数十万量级)                 │
-│   TextVQA, ST-VQA → 场景文字 (数十万量级)                  │
-│                                                          │
-│ 来源 B: 合成数据                                          │
-│   使用 GPT-4o 对图像重新生成 QA 对                        │
-│   对低质量答案进行改写和扩展                               │
-│   数学题用 LaTeX 重排版，确保格式统一                      │
-│                                                          │
-│ 来源 C: 自建标注                                          │
-│   针对 OCR 弱项，人工标注中文文档、手写体等               │
-│   多步推理标注: 给图表题标注完整的推理链 (CoT)             │
-└──────────────┬───────────────────────────────────────────┘
-               ↓
-┌──────────────────────────────────────────────────────────┐
-│ 阶段 2: 多级过滤 (Multi-Stage Filtering)                  │
-│                                                          │
-│ Level 1 — 图文相关性过滤:                                 │
-│   使用 CLIP 计算图文相似度                                 │
-│   阈值: cosine_sim > 0.28 (LAION 标准)                    │
-│   过滤掉约 40% 的不相关图文对                              │
-│                                                          │
-│ Level 2 — 视觉质量过滤:                                   │
-│   分辨率过滤: 短边 > 200px (预训练), > 100px (OCR 特殊保留)│
-│   模糊度检测: Laplacian 方差 < 阈值则丢弃                  │
-│   重复检测: pHash 距离 < 8 视为近似重复                    │
-│                                                          │
-│ Level 3 — 文本质量过滤:                                   │
-│   语言模型困惑度: PPL > 1000 的文本视为低质量丢弃          │
-│   长度过滤: 答案 < 3 tokens 或 > 2048 tokens 的移除        │
-│   格式检查: 数学答案必须包含可解析的数值或 LaTeX            │
-│                                                          │
-│ Level 4 — 安全过滤:                                       │
-│   NSFW 分类器过滤有害图像                                  │
-│   毒性检测器过滤有害文本                                   │
-└──────────────┬───────────────────────────────────────────┘
-               ↓
-┌──────────────────────────────────────────────────────────┐
-│ 阶段 3: 数据混合与采样 (Data Mixing & Sampling)            │
-│                                                          │
-│ 任务加权采样:                                             │
-│   根据消融实验确定的最优比例，对各类数据加权               │
-│   过多的类别降采样 (如通用图文对)                          │
-│   稀缺的类别上采样 (如多图推理、复杂文档)                  │
-│                                                          │
-│ 难度标签:                                                 │
-│   Easy: 简单描述、单步 OCR、基础 VQA                       │
-│   Medium: 多步推理、图表分析、中等数学                     │
-│   Hard: 多图推理、竞赛数学、复杂文档布局                   │
-│   最终比例: 5:3:2 (经消融实验确定)                         │
-└──────────────────────────────────────────────────────────┘
-```
-
-#### 5.3.2 数据工程四原则
-
-**原则 1：去噪优先**
-
-原始网络数据含大量噪声（图文不对应、低分辨率、有害内容），InternVL 通过上述多级过滤管线，将原始数据过滤率控制在 50-60%，保留高质量子集。
-
-**原则 2：指令多样性**
-
-同一张图用不同问题描述方式生成多条训练数据，避免模型对固定模板过拟合：
-
-```
-同一张图（饼图）:
-  "这张图表说明了什么？"                  → 宏观描述
-  "2023年第一季度的占比是多少？"          → 细节提取
-  "哪个部分占比最大，大约多少？"          → 比较推理
-  "用 JSON 格式输出所有数据"             → 格式化输出
-  "请逐步分析这张图表的数据趋势"         → CoT 推理
-  "将此图表翻译为中文描述"               → 跨语言迁移
-```
-
-**原则 3：防止灾难性遗忘**
-
-多模态 SFT 阶段始终保留约 10% 的纯文本 NLP 数据（数学推理、代码、对话），防止 LLM 的语言能力在多模态训练中退化。
-
-```
-消融实验结果:
-  无纯文本数据: MMLU 从 72.1 下降到 68.3 (-3.8)，GSM8K 从 85.2 下降到 79.6 (-5.6)
-  5% 纯文本:   MMLU 71.0 (-1.1)，视觉任务不受影响
-  10% 纯文本:  MMLU 71.8 (-0.3)，视觉任务不受影响 ← 最优平衡点
-  20% 纯文本:  MMLU 72.0 (-0.1)，但视觉任务 OCRBench -12 分
-```
-
-**原则 4：难度平衡**
-
-过多困难样本导致训练不稳定，过多简单样本导致能力瓶颈。
-
-```
-消融实验 (InternVL2-8B, SFT 阶段):
-  全部 Easy 数据:        MMBench 82.1, MMMU 45.2, MathVista 48.3
-  Easy:Hard = 1:1:       MMBench 80.3, MMMU 49.8, MathVista 55.1 (训练 loss 不稳定)
-  Easy:Med:Hard = 5:3:2: MMBench 83.5, MMMU 51.3, MathVista 56.7 ← 最优
-  Easy:Med:Hard = 3:4:3: MMBench 82.8, MMMU 50.9, MathVista 56.2
-```
-
-#### 5.3.3 GPT-4o 辅助标注策略
-
-InternVL 大量使用 GPT-4o 对训练数据进行质量增强，这是一种"蒸馏式数据工程"：
-
-```
-应用场景 1: 低质量答案改写
-  原始标注: "这是一张柱状图" (过于简略)
-  GPT-4o 改写: "这是一张展示2020-2023年各季度营收的柱状图，
-                纵轴为营收（百万美元），横轴为时间。
-                整体呈上升趋势，其中2023Q3达到峰值约850百万美元。"
-
-应用场景 2: CoT 推理链生成
-  问题: "图中总营收是多少？"
-  原始答案: "2750百万美元"
-  GPT-4o 生成 CoT:
-    "让我逐步计算各季度营收：
-     2020Q1: 150M, Q2: 180M, Q3: 200M, Q4: 220M → 2020年合计: 750M
-     2021Q1: 230M, Q2: 260M, ...
-     总计: 2750百万美元"
-
-应用场景 3: 多语言数据扩展
-  英文 QA 对 → GPT-4o 翻译为中文/日文/韩文
-  保持专业术语准确性，非简单机翻
-
-质量控制:
-  GPT-4o 生成的数据经过以下验证:
-  1. 数值验证: 数学答案用 sympy 验证正确性
-  2. 交叉验证: 同一问题用 Claude 和 GPT-4o 分别回答，取一致的
-  3. 人工抽检: 约 5% 的数据进行人工质检
-```
-
-#### 5.3.4 各版本数据策略演进
-
-| 维度 | InternVL 1.5 | InternVL 2.0 | InternVL 2.5 |
-|---|---|---|---|
-| 预训练数据量 | ~1B 图文对 | ~2B 图文对 | ~3B 图文对（含高分辨率） |
-| SFT 数据量 | ~4M 条 | ~12M 条 | ~16M 条 |
-| GPT-4o 辅助标注 | 少量 | 约 30% SFT 数据 | 约 40% SFT 数据 |
-| 视频数据 | 无 | ~10% | ~12%（含长视频） |
-| 多图数据 | 无 | ~8% | ~10%（含跨图推理） |
-| CoT 数据 | 无 | 少量 | ~15%（显著增加） |
-| 合成数据比例 | <10% | ~25% | ~35% |
-
-### 5.4 评估方法论与消融实验
-
-#### 5.4.1 Benchmark 选择逻辑
-
-InternVL 选择的评估 benchmark 不是随意的，而是按照能力维度系统覆盖：
-
-```
-能力维度 1: 综合视觉理解
-  → MMMU (多学科): 考察模型对学科图像的理解（物理电路图、化学结构式等）
-  → MMBench: 多维度视觉问答，覆盖感知、推理、知识
-  → 为什么选这两个: MMMU 难度高，区分度大；MMBench 覆盖全面，稳定性好
-
-能力维度 2: 文档/OCR 理解
-  → OCRBench: 综合 OCR 测评（场景文字、文档、手写体、多语言）
-  → DocVQA: 文档问答（扫描件、表格、表单）
-  → ChartQA: 图表理解（柱状图、折线图、饼图）
-  → 为什么重点测: InternVL 的 Dynamic Tiling + 大 ViT 在此领域优势最大
-
-能力维度 3: 数学与推理
-  → MathVista: 数学图像推理（几何题、统计图表、函数图像）
-  → 为什么重要: 需要视觉理解+数学推理的联合能力，是 VLM 的难点
-
-能力维度 4: 视频理解
-  → Video-MME: 多类型视频理解
-  → 为什么仍然测: 虽然不是强项，但需要展示全面性
-```
-
-#### 5.4.2 评估协议细节
-
-InternVL 在评估时有严格的协议规范，确保结果可复现：
-
-```
-图像处理:
-  - 评估时使用与训练相同的动态分辨率策略
-  - max_tiles 保持一致（默认 12）
-  - 缩略图始终包含
-
-生成设置:
-  - 温度: 0.0（贪心解码，确保确定性结果）
-  - 最大生成长度: 按任务调整（VQA: 256, 文档: 1024, 数学 CoT: 2048）
-  - 不使用 beam search（与推理效率权衡）
-
-答案提取:
-  - 选择题: 正则匹配提取选项字母
-  - 开放式: 完整输出作为答案
-  - 数学题: 提取最后一个数值或 LaTeX 表达式
-  
-多次评估:
-  - 关键 benchmark 至少评 3 次取平均（消除随机性）
-  - 报告标准差（技术报告附录中）
-```
-
-#### 5.4.3 关键消融实验结果
-
-InternVL 技术报告中的消融实验提供了极有价值的设计指导：
-
-**消融 1：视觉编码器规模**（控制 LLM = InternLM-7B）
-
-| 视觉编码器 | 参数量 | MMMU | OCRBench | DocVQA | 推理速度 |
-|---|---|---|---|---|---|
-| CLIP ViT-B/16 | 86M | 41.2 | 512 | 65.3 | 1.0x |
-| CLIP ViT-L/14 | 300M | 44.5 | 589 | 72.1 | 0.92x |
-| SigLIP-400M | 400M | 45.8 | 601 | 74.3 | 0.90x |
-| InternViT-300M | 300M | 45.1 | 610 | 73.8 | 0.92x |
-| InternViT-6B | 6B | 50.1 | 698 | 83.2 | 0.65x |
-
-> 关键发现: InternViT-6B 相比 CLIP ViT-L 在 MMMU 上提升 5.6 分，OCRBench 提升 109 分。代价是推理速度降低约 35%。
-
-**消融 2：Tile 数量**（InternVL2-8B）
-
-| 最大 Tile 数 | 视觉 tokens 上限 | OCRBench | DocVQA | MMBench | 延迟 |
-|---|---|---|---|---|---|
-| 1 | 256 | 589 | 68.2 | 80.1 | 1.0x |
-| 4 | 1024 | 672 | 79.5 | 82.3 | 2.1x |
-| 6 | 1536 | 701 | 83.1 | 82.8 | 2.8x |
-| 12 | 3072 | 724 | 87.2 | 83.1 | 4.5x |
-| 24 | 6144 | 731 | 88.0 | 83.2 | 8.2x |
-
-> 关键发现: 从 1 到 12 tiles，OCR 性能大幅提升（+135 分）；从 12 到 24 tiles 提升微弱（+7 分），但延迟翻倍。**12 tiles 是最优性价比点**。
-
-**消融 3：Thumbnail 的作用**（InternVL2-8B, max_tiles=12）
-
-| 配置 | MMMU | OCRBench | 场景描述 (COCO Caption) |
-|---|---|---|---|
-| 无 Thumbnail | 49.3 | 718 | BLEU-4: 38.2 |
-| 有 Thumbnail | 51.3 | 724 | BLEU-4: 42.1 |
-
-> 关键发现: Thumbnail 对 OCR 帮助有限（+6），但对需要全局理解的任务（如场景描述 +3.9 BLEU、综合理解 +2.0 MMMU）效果显著。
-
-**消融 4：Pixel Shuffle 压缩率**（InternVL2-8B）
-
-| 压缩方式 | tokens/tile | MMMU | OCRBench | 显存占用 |
-|---|---|---|---|---|
-| 不压缩 | 1024 | 52.1 | 738 | OOM (12 tiles) |
-| Pixel Shuffle r=2 | 256 | 51.3 | 724 | 可运行 |
-| Pixel Shuffle r=4 | 64 | 47.8 | 651 | 极低 |
-| Average Pool 2×2 | 256 | 49.1 | 689 | 可运行 |
-
-> 关键发现: Pixel Shuffle r=2 是最优平衡——相比不压缩仅损失约 1-2%，但使 12 tiles 场景可以在单卡上运行。r=4 过度压缩导致 OCR 显著退化。对比 Average Pool，Pixel Shuffle 在 OCR 上明显更优（+35 分）。
-
----
-
-## 六、和其他 VLM 的技术对比
-
-### 6.1 与 LLaVA 系列对比
-
-LLaVA 是最有影响力的开源 VLM 基线，InternVL 和 LLaVA 的架构思路相近，但关键设计不同：
-
-| 维度 | LLaVA-1.6 | InternVL 2.5 |
-|---|---|---|
-| 视觉编码器 | CLIP ViT-L/14 (~300M) | InternViT-6B (~6B) |
-| 动态分辨率 | AnyRes（类似动态分块） | Dynamic Tiling + Thumbnail |
-| 最大分辨率 | ~2240×2240（最大 4 tiles） | ~2016×1344（最大 12 tiles） |
-| 语言模型 | Vicuna-13B / LLaMA-3 | InternLM-3 / Qwen2 |
-| 多图输入 | 有限支持 | 完整支持 |
-| 视频输入 | 不支持 | 支持（16~32 帧） |
-| OCRBench | ~600 | 822 |
-| MMMU | ~43 | 70.1 |
-| 训练数据规模 | ~1M（SFT）| ~12M（SFT） |
-| 开源完整性 | 权重+数据集开源 | 权重+技术报告，部分数据开源 |
-
-**核心差距**：视觉编码器规模（20倍差距）+ 更丰富的数据工程是 InternVL 显著超越 LLaVA 的主因。
-
-### 6.2 与 Qwen2-VL 深度对比
-
-Qwen2-VL 是阿里开源的 VLM 系列，与 InternVL 代表了当前开源 VLM 的两条不同技术路线。以下从架构、数据、评估三个维度做深入对比。
-
-#### 6.2.1 架构路线对比总览
-
-| 维度 | Qwen2-VL-72B | InternVL 2.5-78B |
-|---|---|---|
-| 视觉编码器 | ViT-600M（NaViT 结构） | InternViT-6B |
-| 编码器参数比 | 0.8%（600M / 72B） | 7.7%（6B / 78B） |
-| 动态分辨率 | Naive Dynamic Resolution（原生变长） | Dynamic Tiling（切分+拼接） |
-| 视觉 token 交互 | **全局 self-attention**（所有 patches） | **Tile 内局部**（Tile 间隔离） |
-| 位置编码 | M-RoPE（3D：时间×高×宽） | 1D RoPE + 可学习 APE（ViT 内） |
-| Token 压缩 | 无（直接映射） | Pixel Shuffle 4× 压缩 |
-| 语言模型 | Qwen2.5-72B | InternLM-3-72B |
-| 设计哲学 | **小编码器 + 强位置编码 + LLM 承担理解** | **大编码器 + 强视觉特征 + LLM 做融合** |
-
-#### 6.2.2 架构差异一：视觉编码器规模与内部结构
-
-**两条路线的核心分歧**：
-
-```
-InternVL 路线 — "重视觉"（Vision-Heavy）:
-  视觉编码器: 6B 参数，45 层 Transformer，3200 维
-  设计意图: 在视觉侧提取尽可能丰富的特征
-            让 LLM 拿到的视觉 tokens 已经包含高层语义
-  优势: OCR、文档等需要细粒度视觉特征的任务表现强
-  代价: 6B 视觉编码器占用大量显存和计算
-
-Qwen2-VL 路线 — "重理解"（Understanding-Heavy）:
-  视觉编码器: 600M 参数，较浅的 ViT
-  设计意图: 视觉编码器只需提取"足够好"的特征
-            空间理解交给 M-RoPE 编码
-            高层语义理解交给强大的 Qwen2 LLM
-  优势: 推理速度快，显存效率高，视频处理更灵活
-  代价: 对视觉编码器质量的依赖转移到了位置编码和 LLM 上
-```
-
-**Qwen2-VL 的 NaViT 结构**：
-
-Qwen2-VL 的视觉编码器采用 NaViT（Native Resolution ViT）架构，这是与 InternVL 最关键的架构差异：
-
-```
-NaViT 的核心思路: 原生支持任意分辨率，不需要切 Tile
-
-传统 ViT (InternVL 使用):
-  输入: 固定 448×448
-  Patch: 14×14 → 1024 个 tokens (固定)
-  位置编码: 1024 个可学习的固定位置
-
-NaViT (Qwen2-VL 使用):
-  输入: 任意分辨率 (如 672×1120)
-  Patch: 14×14 → (672/14)×(1120/14) = 48×80 = 3840 个 tokens (可变)
-  位置编码: 2D 位置编码，按实际行列分配
-  
-  关键差异:
-    所有 3840 个 patches 在 ViT 内做 FULL self-attention
-    → 图像右上角的 patch 可以直接"看到"左下角
-    → 不存在 InternVL 的 Tile 边界切割问题
-    
-  代价:
-    self-attention 计算量 ∝ (patch 总数)²
-    3840 patches 的注意力计算量 ≈ 3840² = 14.7M (每头每层)
-    而 InternVL 单 Tile 只有 1024² = 1.05M
-    
-    但 Qwen 的 ViT 只有 600M 参数（层数少），
-    所以绝对计算量仍然小于 InternViT-6B
-```
-
-**实际计算量对比**（处理一张 1344×896 图像）：
-
-```
-InternVL:
-  切为 6 个 448×448 Tiles + 1 个缩略图 = 7 个 Tiles
-  每 Tile: InternViT-6B 处理 1024 tokens → ~4.1 TFLOPs
-  7 Tiles 总计: ~28.7 TFLOPs（可并行）
-  输出: 7×256 = 1792 个视觉 tokens → LLM
-
-Qwen2-VL:
-  直接 resize 到最近的支持分辨率
-  (1344/14)×(896/14) = 96×64 = 6144 个 patches
-  ViT-600M 处理 6144 tokens → ~2.8 TFLOPs
-  输出: 6144 个视觉 tokens → 但会经过 token 压缩 → LLM
-  
-  注: Qwen2-VL 实际会对分辨率做限制（如最大 patch 数），
-      并在输入 LLM 前做 2×2 merging，最终 tokens ≈ 1536
-```
-
-| 指标 | InternVL 2.5 | Qwen2-VL |
-|---|---|---|
-| 视觉编码器计算量 | ~28.7 TFLOPs（高） | ~2.8 TFLOPs（低） |
-| 视觉 tokens 送入 LLM | 1792 | ~1536 |
-| 跨区域注意力 | 仅 LLM 阶段 | ViT + LLM 两阶段 |
-| 边界效应 | 有（Tile 切割） | 无（全局注意力） |
-
-#### 6.2.3 架构差异二：M-RoPE vs 1D RoPE
-
-这是两者最具技术深度的架构差异。
-
-**InternVL 的位置编码方案**：
-
-```
-ViT 内部: 可学习绝对位置编码 (APE)
-  1024 个位置，每个 3200 维，训练时学习
-
-ViT → LLM 的投影后:
-  视觉 tokens 排列为 1D 序列:
-    [tile1_token1, tile1_token2, ..., tile1_token256,
-     tile2_token1, ..., tile2_token256, ...]
-  
-  LLM 内部使用标准 1D RoPE:
-    每个 token 获得递增的位置 ID: 0, 1, 2, 3, ...
-    模型需要"学会"从 1D 位置推断 2D 空间关系
-    
-  问题:
-    - Tile 1 的 token_256 和 Tile 2 的 token_1 在 1D 序列中相邻
-      但它们在图像中可能处于完全不同的空间位置
-    - LLM 必须从训练数据中隐式学习 Tile 排列规律
-```
-
-**Qwen2-VL 的 M-RoPE (Multimodal RoPE)**：
-
-```
-核心思想: 将 RoPE 的频率维度拆分为 3 个独立分量
-  → temporal (时间), height (高度), width (宽度)
-
-数学表达:
-  标准 RoPE (1D):
-    对于位置 p 和维度 d:
-    f(p, d) = p × θ_d, 其中 θ_d = 1/10000^(2d/D)
-    
-  M-RoPE (3D):
-    将隐藏维度 D 三等分: D = D_t + D_h + D_w
-    
-    对于位置 (t, h, w):
-    f_temporal(t, d) = t × θ_d,      d ∈ [0, D_t)
-    f_height(h, d)   = h × θ_d,      d ∈ [D_t, D_t+D_h)
-    f_width(w, d)    = w × θ_d,      d ∈ [D_t+D_h, D)
-    
-    最终 RoPE = concat(f_temporal, f_height, f_width)
-
-不同模态的位置分配:
-
-  文本 tokens:
-    t = h = w = 递增序列位置 → 退化为标准 1D RoPE
-    即: 文本处理完全不受 M-RoPE 影响
-    
-  图像 tokens (单图):
-    t = 0 (固定, 非视频)
-    h = patch 所在行号 (0, 1, 2, ..., H-1)
-    w = patch 所在列号 (0, 1, 2, ..., W-1)
-    → 模型天然知道每个 patch 的行列位置
-    
-  视频 tokens:
-    t = 帧号 (0, 1, 2, ..., T-1)
-    h = 该帧中 patch 的行号
-    w = 该帧中 patch 的列号
-    → 同时编码时间和空间位置
-    → "同一帧不同位置" vs "不同帧同一位置" 被不同维度区分
-    
-  多图 tokens:
-    不同图像赋予不同的 t 值
-    → 模型可以区分"图 1 的右上角"和"图 2 的右上角"
-```
-
-**M-RoPE 的实际影响分析**：
-
-| 场景 | M-RoPE 优势 | 1D RoPE 表现 |
-|---|---|---|
-| 图像内空间推理 | 天然感知上下左右 | 需从数据中隐式学习 |
-| 视频时序理解 | 时间维度显式编码 | 依赖分隔符和序列顺序 |
-| 多图位置关系 | 不同图有不同 t 值 | 仅靠分隔符区分 |
-| OCR 文字定位 | 知道文字在第几行几列 | 依赖 ViT 特征质量 |
-| 通用 VQA | 帮助有限 | 基本够用 |
-
-**为什么 InternVL 不采用 M-RoPE？**
-
-1. **历史原因**：InternVL 1.0/1.5 在 M-RoPE 提出前已确定架构
-2. **兼容性**：更换位置编码需要重新预训练 LLM，成本极高
-3. **大 ViT 补偿**：InternViT-6B 的特征质量足够高，部分弥补了位置编码的不足
-4. **工程简洁性**：1D RoPE 与标准 LLM 完全兼容，不需要修改任何框架代码
-
-#### 6.2.4 架构差异三：动态分辨率实现
-
-```
-InternVL — Dynamic Tiling:
-  ┌───────────────────────────────────────────┐
-  │ 输入图像 (任意分辨率)                       │
-  │     ↓                                     │
-  │ 选择最优 Tile 布局 (如 3×2 = 6 tiles)       │
-  │     ↓                                     │
-  │ Resize 到 Tile 布局对应的分辨率              │
-  │ (如 3×448 = 1344, 2×448 = 896)             │
-  │     ↓                                     │
-  │ 切分为 6 个独立的 448×448 Tiles              │
-  │ + 1 个全局缩略图 448×448                    │
-  │     ↓                                     │
-  │ 每个 Tile 独立过 InternViT-6B               │
-  │ 7 个 Tiles × 256 tokens = 1792 tokens       │
-  └───────────────────────────────────────────┘
-  
-  特点:
-    - Tiles 之间在 ViT 内无交互
-    - 需要额外的缩略图保留全局信息
-    - Token 数 = (tile_count + 1) × 256, 离散增长
-
-Qwen2-VL — Naive Dynamic Resolution:
-  ┌───────────────────────────────────────────┐
-  │ 输入图像 (任意分辨率)                       │
-  │     ↓                                     │
-  │ Resize 到最近的 patch 对齐分辨率              │
-  │ (确保宽高均为 14 的倍数)                     │
-  │     ↓                                     │
-  │ 整体作为一张图过 NaViT                       │
-  │ 所有 patches 做全局 self-attention            │
-  │     ↓                                     │
-  │ 2×2 merging 降低 token 数                    │
-  │     ↓                                     │
-  │ M-RoPE 赋予每个 token 精确的 (t,h,w) 坐标    │
-  └───────────────────────────────────────────┘
-  
-  特点:
-    - 不需要切 Tile, 也不需要缩略图
-    - 所有 patches 全局交互
-    - Token 数 = (H/14 × W/14) / 4, 连续增长
-    - M-RoPE 提供显式空间位置信息
-```
-
-#### 6.2.5 数据工程对比
-
-两者的 benchmark 水平接近，但数据策略有显著差异：
-
-**数据来源差异**：
-
-```
-InternVL 数据优势:
-  ✓ 技术报告对数据配比有详细消融实验，可复现性强
-  ✓ 自建了大量 OCR/文档/数学的高质量标注
-  ✓ GPT-4o 辅助标注比例高 (~40%)，数据质量有保障
-  ✓ 数据课程学习策略 (Easy→Medium→Hard) 经过系统验证
-  
-  ✗ 中文 OCR 数据不如阿里丰富（缺少电商场景）
-  ✗ 视频数据质量和数量不足
-  ✗ 多语言覆盖有限
-
-Qwen2-VL 数据优势:
-  ✓ 阿里内部有海量电商图像数据（商品图、价格标签、用户评论图）
-  ✓ 多语言数据天然丰富（阿里国际化业务覆盖多语种）
-  ✓ 视频数据规模大（优酷等视频平台资源）
-  ✓ 数据标注流水线成熟（阿里达摩院长期积累）
-  
-  ✗ 技术报告对数据细节披露较少，可复现性差
-  ✗ 数学/科学图像数据不如 InternVL 精细
-```
-
-**SFT 数据配比对比**（推测 + 报告数据）：
-
-| 数据类别 | InternVL 2.5 | Qwen2-VL (推测) | 差异影响 |
-|---|---|---|---|
-| 通用视觉对话 | ~25% | ~20% | 基础能力相当 |
-| OCR/文档 | ~20% | ~25% | Qwen OCR 更强 |
-| 数学/科学 | ~15% | ~10% | InternVL 数学更强 |
-| 图表/表格 | ~12% | ~10% | InternVL 略优 |
-| 视频 | ~12% | ~20% | Qwen 视频显著更强 |
-| 多图 | ~10% | ~8% | 相当 |
-| 纯文本 | ~6% | ~7% | 防遗忘，相当 |
-
-#### 6.2.6 评估结果深度分析
-
-**综合 Benchmark 全面对比**：
-
-| Benchmark | InternVL 2.5-78B | Qwen2-VL-72B | 差距 | 分析 |
-|---|---|---|---|---|
-| MMMU (val) | 70.1 | 70.2 | -0.1 | 基本持平 |
-| MMBench | 88.9 | 86.9 | +2.0 | InternVL 多维度理解更强 |
-| MathVista | 76.6 | 75.1 | +1.5 | InternVL 数学推理略优 |
-| OCRBench | 822 | 866 | -44 | **Qwen 显著领先** |
-| DocVQA | 95.1 | 96.5 | -1.4 | Qwen 文档理解更强 |
-| ChartQA | 89.4 | 88.3 | +1.1 | 基本持平 |
-| Video-MME | 72.1 | ~80 | **-8** | **Qwen 视频大幅领先** |
-| RealWorldQA | 72.3 | 77.8 | -5.5 | Qwen 真实场景更强 |
-| AI2D | 87.5 | 88.1 | -0.6 | 基本持平 |
-
-**选择性报告偏差分析**：
-
-```
-InternVL 技术报告主推:
-  MMMU, MathVista, ChartQA → 自己领先的指标
-  弱化报告: Video-MME, RealWorldQA
-
-Qwen2-VL 技术报告主推:
-  OCRBench, DocVQA, Video-MME, RealWorldQA → 自己领先的指标
-  弱化报告: MathVista, MMBench
-
-阅读技术报告时的注意事项:
-  1. 看"完整表格"而非摘要中的精选指标
-  2. 注意评估版本: MMMU-val vs MMMU-test 结果差距大
-  3. 注意 prompt 格式: CoT prompting vs 直接回答会影响数学成绩
-  4. 第三方复现 (如 OpenCompass) 的结果更可信
-```
-
-**真实差距总结**：
-
-```
-InternVL 2.5 > Qwen2-VL 的场景:
-  ✓ 数学图像推理 (大 ViT 特征质量优势)
-  ✓ 复杂图表分析 (高分辨率 + 细粒度特征)
-  ✓ 多维度综合理解 (MMBench)
-
-Qwen2-VL > InternVL 2.5 的场景:
-  ✓ OCR 基础任务 (电商数据 + M-RoPE 定位优势)
-  ✓ 视频理解 (M-RoPE 时序编码 + 更多视频训练数据)
-  ✓ 空间位置推理 (M-RoPE 天然优势)
-  ✓ 真实场景泛化 (数据覆盖更广)
+InternVL 3.5 优势:
+  ✓ Cascade RL 带来更强的推理能力（MathVista 82.7 vs 74.2）
+  ✓ 大视觉编码器在细粒度视觉特征上更强
+  ✓ ViR 动态压缩提供更灵活的效率-性能权衡
+  ✓ MoE 旗舰模型规模更大（241B vs 72B）
+
+Qwen2.5-VL 优势:
+  ✓ M-RoPE 提供天然的空间/时序位置编码（空间推理更强）
+  ✓ NaViT 全局注意力无 Tile 边界问题
+  ✓ 视频理解数据更丰富
+  ✓ 视觉编码器更轻量，推理效率更高（不用 6B ViT）
 
 本质差异:
-  架构选择造成约 30% 的性能差异
-  数据工程造成约 70% 的性能差异
-  → 两者架构都可以达到当前水准，数据是真正的护城河
+  InternVL: "重视觉 + 重 RL 对齐" → 推理和细粒度理解强
+  Qwen-VL: "重位置编码 + 重数据" → 空间理解和视频理解强
 ```
 
-### 6.3 三者横向总结
+### 5.3 性能对比总结
 
-```
-LLaVA 系列:
-  ✓ 架构最简单清晰，社区生态最大
-  ✓ 论文和代码透明度最高（学术友好）
-  ✗ 视觉编码器偏小，高分辨率理解弱
-  ✗ 数据工程投入有限，距离闭源有差距
-
-Qwen-VL 系列:
-  ✓ M-RoPE 是原创性位置编码创新
-  ✓ 视频理解能力强，图文视频统一
-  ✓ 阿里 Qwen 语言底座强，中文能力好
-  ✗ 视觉编码器规模不如 InternViT-6B
-
-InternVL 系列:
-  ✓ 大视觉编码器（6B）是核心壁垒
-  ✓ Dynamic Tiling 在 OCR/文档任务上行业最强
-  ✓ 数据工程精细，覆盖任务类型最全
-  ✗ 视频理解相对弱于 Qwen-VL
-  ✗ 语言底座相对小众（InternLM），生态不如 Qwen
-```
+| Benchmark | InternVL3.5-241B | Qwen2.5-VL-72B | GPT-5 | 能力维度 |
+|---|---|---|---|---|
+| MMMU | 77.7 | 68.2 | 84.2 | 综合多学科理解 |
+| MathVista | **82.7** | 74.2 | 81.9 | 数学图像推理 |
+| OCRBench | **90.7** | 88.5 | 80.7 | OCR 综合 |
+| MMStar | **77.9** | — | 75.7 | 多维度视觉问答 |
+| Video-MME | 72.9 | ~80 | 81.8 | 视频理解 |
 
 ---
 
-## 七、关键创新总结
+## 六、关键技术总结与启示
 
-### 7.1 技术贡献层次
-
-**一级创新（系列性原创）**：
-
-1. **大视觉编码器路线（InternViT-6B）**：系统性验证了视觉编码器规模效益，6B 规模的 ViT 在细粒度视觉理解上显著优于 ~300M 的 CLIP ViT
-
-2. **Dynamic Tiling + Thumbnail 机制**：动态分块策略在兼顾计算效率的前提下，将实际处理分辨率提升 6~20 倍，成为 OCR 和文档理解能力的关键基础
-
-**二级创新（精细化工程）**：
-
-3. **三阶段训练流程规范化**：将视觉-语言对齐预训练、全参数训练、指令微调明确分离，每阶段有清晰目标，易于复现和改进
-
-4. **多任务数据课程学习**：通过精细的数据配比和难度渐进，解决多模态多任务的遗忘问题
-
-5. **Progressive Scaling 策略**：从小到大渐进式扩展，小模型探索配方，大模型继承，降低全系列训练成本
-
-**三级创新（工程实践）**：
-
-6. **Pixel Shuffle 压缩**：1024 → 256 tokens 的空间保持压缩，平衡细节保留和计算效率
-
-7. **多图/视频 tokens 排列方式**：统一了多图和视频的 token 组织格式，为多帧理解奠定基础
-
-### 7.2 对 VLM 领域的启示
-
-InternVL 系列的成功证明了几个重要结论，对整个 VLM 领域有参考价值：
+### 6.1 InternVL 系列的核心技术贡献
 
 ```
-1. 视觉编码器的投入回报率被系统性低估
-   → 20倍视觉编码器参数 ≈ 10倍语言模型参数的性能收益
+一级创新（系列性原创）:
+  1. 大视觉编码器路线 (InternViT-6B) — 证明视觉编码器规模效益被低估
+  2. Dynamic Tiling + Thumbnail — 动态分辨率的工程最优解
+  3. Cascade RL (MPO + GSPO) — 级联强化学习，推理能力大幅提升 ★ 3.5 新增
+  4. 原生多模态预训练 — 从"适配"到"共训"的范式转换 ★ 3.0 新增
 
-2. 高分辨率是 OCR/文档任务的必要条件（不是充分条件）
-   → 动态分辨率 + 大视觉编码器缺一不可
+二级创新（精细化工程）:
+  5. ViR + ViCO — 动态视觉 token 压缩，4x 加速 <1% 性能损失
+  6. V2PE — 可变视觉位置编码
+  7. 数据课程学习 + 多任务平衡 — 系统性数据工程
+  8. Progressive Scaling — 小模型探索，大模型继承
 
-3. 数据工程（配比、质量、课程）对最终性能的影响不亚于架构
-   → 开源 VLM 和闭源的差距主要在数据，不在架构
-
-4. 全系列（2B~78B）统一架构是正确方向
-   → 小模型验证，大模型继承，工程效率极大提升
-
-5. 开源 VLM 在静态图像任务上已追平闭源旗舰（截至 2025 年初）
-   → 剩余差距在视频、安全性、指令鲁棒性
+三级创新（工程实践）:
+  9. Pixel Shuffle 压缩 — 零信息损失的空间降采样
+  10. DvD 解耦部署 — 视觉/语言模型异步流水线
 ```
 
-### 7.3 局限性与未来方向
+### 6.2 系列演进的核心规律
 
-**当前局限**：
-- **视频理解仍有差距**：帧抽取方式损失时序信息，长视频（>5 分钟）理解能力不足
-- **多图跨图推理**：多张图像之间的关系推理（如变化检测、图像比较）还有提升空间
-- **实时性**：78B 模型推理速度对于实时应用（机器人、自动驾驶感知）还不够快
+```
+1. LLM 底座追踪最强开源: InternLM → Qwen2.5 → Qwen3
+   → 不执着于自研 LLM，务实选择最优底座
+
+2. 训练策略持续深化: 三阶段 SFT → 原生预训练 + MPO → Cascade RL
+   → RL 对齐成为 VLM 推理能力的关键
+
+3. 数据规模指数增长: SFT 4M → 12M → 16M → 56M
+   → 但质量控制（GPT-4o 标注、CoT 数据）同等重要
+
+4. 效率优化逐步成熟: 固定压缩 → 动态压缩(ViR) → 解耦部署(DvD)
+   → 从"能用"到"好用"的工程化进程
+
+5. 视觉编码器策略分化: 大模型用 6B ViT，小模型用 300M ViT
+   → 实际部署考虑，不再一刀切
+```
+
+### 6.3 当前局限与未来方向
+
+**仍有差距的领域**：
+- **视频长序列理解**：Video-MME 仍落后 GPT-5 约 9 分
+- **极端推理**：AIME24 落后 GPT-5 约 5 分
+- **纯语言能力**：MMLU-Pro 落后 GPT-5 约 4 分
 
 **可预期的演进方向**：
-- 原生视频 Transformer（类似 Gemini 的统一视频处理）
-- 更高效的视觉 token 压缩（减少 LLM 的视觉 token 负担）
-- 增强 RLHF/DPO 对齐，提升指令鲁棒性
-- 空间理解能力增强（3D 感知、深度估计）
+- 更高效的原生多模态预训练（减少对文本 LLM 预训练权重的依赖）
+- 视频原生 Transformer（端到端时序建模，而非抽帧）
+- 更强的 RL 对齐（结合 RLHF 和过程奖励模型）
+- 3D 空间理解增强（与具身智能结合）
+- 更轻量的视觉编码器方案（追求 InternViT-6B 级别效果、300M 级别参数）
 
 ---
 
