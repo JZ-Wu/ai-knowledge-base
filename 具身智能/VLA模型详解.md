@@ -223,5 +223,8 @@ GPT-4V, LLaVA              RT-1 (2022)
 - **分层 VLA**：高层 VLA 规划 + 底层专家策略执行
 - **世界模型 + VLA**：学习环境动力学，用于规划和想象
 
+> 2025-2026 VLA 前沿（Helix、π₀.5、GR00T N1、Gemini Robotics、Cosmos/Genie/V-JEPA 2）
+> 以及双频 S1/S2 架构共识，详见 [前沿 VLA 与世界模型 2026](前沿VLA与世界模型2026.md)。
+
 ---
 [返回目录](README.md) | [上一篇：模仿学习与强化学习](模仿学习与强化学习.md) | [下一篇：Sim-to-Real 迁移](Sim-to-Real迁移.md)
