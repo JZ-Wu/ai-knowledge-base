@@ -134,8 +134,4 @@
   - 算法手撕
     - [字节跳动 Top 30](/面试手撕/算法手撕/bytedance_top30.md)
 
-- **科研方法论**
-  - [总览](/科研方法论/README.md)
-  - [从Evaluate Idea到Propose Idea](/科研方法论/从Evaluate_Idea到Propose_Idea.md)
-
 - **[行业动态](/行业动态/README.md)**

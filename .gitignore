@@ -18,6 +18,11 @@ _cli_sandbox/
 debug_out.txt
 
 # Claude Code
+.claude/skills/idea-research-skill/
+
+# Personal / not for public repo
+科研方法论/
+idea-research/
 
 # OS
 .DS_Store
