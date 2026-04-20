@@ -135,3 +135,11 @@
     - [字节跳动 Top 30](/面试手撕/算法手撕/bytedance_top30.md)
 
 - **[行业动态](/行业动态/README.md)**
+
+- **科研方法论**
+  - [总览](/科研方法论/README.md)
+  - [从 Evaluate Idea 到 Propose Idea](/科研方法论/从Evaluate_Idea到Propose_Idea.md)
+
+- **申请规划**
+  - [总览](/申请规划/README.md)
+  - [2026-04 博士申请与研究规划](/申请规划/2026-04-博士申请与研究规划.md)
