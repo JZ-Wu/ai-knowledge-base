@@ -1,43 +1,58 @@
-# 具身智能
+# 具身智能 (Embodied AI)
 
-Embodied AI，机器人感知、决策与控制。涵盖基础理论、仿真平台、主流算法，以及 2026 年前沿进展与产业格局。
+> 机器人感知、决策与控制的交叉领域。2025-2026 年进入从"实验室演示"到"小规模量产"的关键拐点：VLA 双系统架构成为共识，世界模型成为训练的第三条腿，人形机器人 BOM 跌至 $20-35K 区间，数据飞轮开始闭环。
 
-## 基础与通识
+本目录按 11 个专题组织，每个专题都有 `README.md` 汇总**当前发展现状**（时间线 + 共识 + 开放问题）与**知识库索引**。
 
-### [具身智能概述与架构](具身智能概述与架构.md)
-感知-决策-执行三层架构、主要研究方向、主流硬件平台、发展脉络
+## 专题导航
 
-### [仿真环境详解](仿真环境详解.md)
-Isaac Sim/Lab、MuJoCo/MJX、Habitat、SAPIEN、Genesis 对比与选型
+### [00 · 基础与架构](00-基础与架构/README.md)
+核心概念、感知-决策-执行三层架构、发展脉络与关键里程碑（SayCan → RT-2 → π₀ → Helix → GR00T N1 → π₀.5 → π₀.7 → Cosmos 2.0）
 
-### [机器人操控详解](机器人操控详解.md)
-抓取（分析式/学习式）、灵巧操作、长 Horizon 操控、Diffusion Policy、ACT
+### [01 · VLA 模型](01-VLA模型/README.md)
+Vision-Language-Action 基础模型专题。涵盖：
+- VLA 架构演进（RT-2 离散 token → π₀ Flow Matching → 双系统双频）
+- 主流模型 2026：**π₀ / π₀.5 / π-fast / π₀.7**、GR00T N1/N1.5、Figure Helix/Helix v2、Gemini Robotics/ER、RDT-2、GO-1、SmolVLA、OpenVLA-OFT
+- 动作生成方法（离散 token / Diffusion / Flow Matching / 自回归 Transformer）
+- 双系统架构（S2 慢思考 7-9Hz + S1 快执行 100-200Hz）
+- 轻量化与端侧部署（Jetson Thor、INT4 量化、MoE VLA）
 
-### [导航与运动规划](导航与运动规划.md)
-SLAM、PointNav/ObjectNav/VLN、运动规划（RRT/CHOMP）、四足与人形 Locomotion
+### [02 · 世界模型](02-世界模型/README.md)
+世界模型（World Model）专题。NVIDIA Cosmos、Google Genie 1/2/3、Meta V-JEPA 2、1X World Model、UniSim；Dreamer 式耦合、VLA + Cosmos 增广、VLA 内嵌预测头、规划+执行分离四条融合路线。
 
-### [模仿学习与强化学习](模仿学习与强化学习.md)
-数据采集与遥操作、行为克隆、Diffusion Policy、RL 奖励工程、课程学习、Teacher-Student
+### [03 · 策略学习方法](03-策略学习方法/README.md)
+模仿学习（BC / DAgger / ACT）、扩散策略（Diffusion Policy / DP3）、强化学习（PPO / SAC / Teacher-Student / ANYmal Parkour），以及 2025-2026 热点 **VLA + RL 后微调**（DPPO / ReinFlow / RLDG）。
 
-### [VLA 模型详解](VLA模型详解.md)
-RT-1/RT-2、Octo、OpenVLA、π₀、GR00T N1，端到端视觉-语言-动作模型
+### [04 · 机器人操控](04-机器人操控/README.md)
+抓取与位姿预测、灵巧操作、长 horizon 任务、双臂与全身操控。GraspNet / AnyGrasp、OpenAI Rubik's Cube、SayCan / VoxPoser、ALOHA / Mobile ALOHA、Figure Helix 全身协调。
 
-### [Sim-to-Real 迁移](Sim-to-Real迁移.md)
-域随机化、域适应、系统辨识、Teacher-Student 框架、Real-to-Sim-to-Real
+### [05 · 运动与导航](05-运动与导航/README.md)
+四足与人形 locomotion（ANYmal Parkour / Extreme Parkour / 电动 Atlas / Unitree H2）、全身控制 WBC（QP-WBC / MPC / Loco-Manipulation）、视觉语言导航 VLN（PointNav → VLMaps → SayNav → NaVILA / Mobility VLA）。
 
-## 2026 战略与前沿
+### [06 · 仿真与 Sim2Real](06-仿真与Sim2Real/README.md)
+主流仿真器对比（Isaac Sim/Lab、MuJoCo/MJX、Habitat、SAPIEN/ManiSkill 3、Genesis）、Sim-to-Real 方法（域随机化 / 域适应 / 系统辨识 / Teacher-Student / Real-to-Sim-to-Real）、可微分物理与 GPU 加速。
 
-### [2026 战略与产业格局](2026战略与产业格局.md)
-技术/产业双主线、核心瓶颈、中美厂商地图、投资与路线之争、关键时间节点
+### [07 · 数据与遥操作](07-数据与遥操作/README.md)
+数据源与采集（五条路径）、主流数据集（**OXE / AgiBot World / DROID / Ego4D**）、数据工厂与飞轮、跨本体学习（π₀ / Octo / UniAct / GR00T N1）。
 
-### [前沿 VLA 与世界模型 2026](前沿VLA与世界模型2026.md)
-π₀.5、GR00T N1、Figure Helix、Gemini Robotics、Cosmos/Genie/V-JEPA 2；双系统架构共识
+### [08 · 硬件与本体](08-硬件与本体/README.md)
+人形机器人厂商地图（美国 7 家 + 中国 10+ 家）、灵巧手与触觉传感（Allegro / LEAP / Shadow / Tesla Optimus Hand Gen2 / Figure Hand v2 / 因时 RH56DFX / PaXini DexH13；GelSight / Digit 360）、执行器与 BOM 成本（2024 $100K → 2026 $20-35K → 2030 <$10K）。
 
-### [人形机器人产业化详解](人形机器人产业化详解.md)
-硬件 BOM、关节/灵巧手/传感器、主要厂商（Tesla/Figure/1X/宇树/智元…）、量产时间表
+### [09 · 评测基准](09-评测基准/README.md)
+经典基准（SIMPLER / LIBERO / CALVIN / Meta-World）与 2025-2026 新生基准（PARTNR / RoboArena / RoboSpatial-VLM / GR-1 Benchmark / AgiBot World Eval）的对比，评测指标从"仿真成功率"演进到"跨本体 + 人类评分 + 长尾鲁棒性"。
 
-### [数据与训练范式演进](数据与训练范式演进.md)
-五条数据路径、数据工厂、跨本体学习、VLA+RL 后微调、数据飞轮设计
+### [10 · 产业与展望](10-产业与展望/README.md)
+战略主线与技术拐点、主要玩家与战略定位、核心瓶颈与机会。三条技术主线 + 两条产业主线；垂直整合（Figure/Tesla/1X）vs 水平分层（Physical Intelligence/NVIDIA/Skild）；2026 四大瓶颈（数据 / 速度 / 泛化 / 成本）与研究/工程/投资机会。
 
 ---
+
+## 快速入口
+
+- **刚入门？** 从 [00 基础与架构](00-基础与架构/README.md) → [01 VLA 模型](01-VLA模型/README.md) → [03 策略学习方法](03-策略学习方法/README.md) 顺序阅读
+- **关注 2026 前沿？** 直接看 [01 VLA 主流模型 2026](01-VLA模型/主流VLA模型2026.md) 和 [02 主流世界模型 2026](02-世界模型/主流世界模型2026.md)
+- **做工业落地？** [08 硬件与本体](08-硬件与本体/README.md) + [10 产业与展望](10-产业与展望/README.md) + [07 数据与遥操作](07-数据与遥操作/README.md)
+- **想找研究方向？** [10 核心瓶颈与机会](10-产业与展望/核心瓶颈与机会.md) 有 8 个研究方向 + 博士题目建议
+
+---
+
 [返回总目录](../README.md)
