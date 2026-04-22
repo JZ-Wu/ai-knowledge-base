@@ -48,12 +48,23 @@
       margin-bottom: 16px;
     }
     /* 侧边栏折叠 */
+    .sidebar-nav li.kb-collapsible {
+      position: relative;
+      padding-left: 14px;
+    }
     .sidebar-nav li.kb-collapsible > ul { display: none; }
     .sidebar-nav li.kb-collapsible.kb-expanded > ul { display: block; }
-    .sidebar-nav .kb-toggle {
+    .sidebar-nav li.kb-collapsible > .kb-toggle {
+      position: absolute;
+      left: 0;
+      top: 6px;
+      z-index: 2;
       display: inline-block;
       width: 14px;
-      margin-right: 2px;
+      height: 16px;
+      line-height: 16px;
+      margin: 0;
+      padding: 0;
       cursor: pointer;
       color: #999;
       user-select: none;
@@ -61,8 +72,7 @@
       font-size: 10px;
       text-align: center;
     }
-    .sidebar-nav li.kb-expanded > .kb-toggle { transform: rotate(90deg); }
-    .sidebar-nav li:not(.kb-collapsible) > .kb-toggle { display: none; }
+    .sidebar-nav li.kb-collapsible.kb-expanded > .kb-toggle { transform: rotate(90deg); }
   </style>
   <link rel="stylesheet" href="docs/css/ai-sidebar.css">
 </head>
