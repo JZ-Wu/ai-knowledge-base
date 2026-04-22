@@ -47,6 +47,22 @@
       border-bottom: 1px solid #eee;
       margin-bottom: 16px;
     }
+    /* 侧边栏折叠 */
+    .sidebar-nav li.kb-collapsible > ul { display: none; }
+    .sidebar-nav li.kb-collapsible.kb-expanded > ul { display: block; }
+    .sidebar-nav .kb-toggle {
+      display: inline-block;
+      width: 14px;
+      margin-right: 2px;
+      cursor: pointer;
+      color: #999;
+      user-select: none;
+      transition: transform 0.15s;
+      font-size: 10px;
+      text-align: center;
+    }
+    .sidebar-nav li.kb-expanded > .kb-toggle { transform: rotate(90deg); }
+    .sidebar-nav li:not(.kb-collapsible) > .kb-toggle { display: none; }
   </style>
   <link rel="stylesheet" href="docs/css/ai-sidebar.css">
 </head>
@@ -57,7 +73,6 @@
       name: 'AI 知识库',
       loadSidebar: '_sidebar.md',
       subMaxLevel: 3,
-      sidebarDisplayLevel: 1,
       search: {
         placeholder: '全文搜索...',
         noData: '没有找到结果',
@@ -157,11 +172,60 @@
       });
     };
     window.$docsify.plugins = (window.$docsify.plugins || []).concat(statsPlugin, pageStatsPlugin);
+
+    // 侧边栏折叠插件：支持 **加粗标题** / 纯文本分组 / 链接混合结构
+    var sidebarCollapsePlugin = function(hook) {
+      var STORAGE = 'kb_sidebar_expanded';
+      function getExpanded() {
+        try { return new Set(JSON.parse(sessionStorage.getItem(STORAGE) || '[]')); }
+        catch(e) { return new Set(); }
+      }
+      function saveExpanded(set) {
+        try { sessionStorage.setItem(STORAGE, JSON.stringify(Array.from(set))); } catch(e) {}
+      }
+      function getKey(li) {
+        var clone = li.cloneNode(true);
+        var nested = clone.querySelector('ul');
+        if (nested) nested.remove();
+        return (clone.textContent || '').trim().slice(0, 80);
+      }
+      function hasDirectChildUl(li) {
+        for (var i = 0; i < li.children.length; i++) {
+          if (li.children[i].tagName === 'UL') return true;
+        }
+        return false;
+      }
+      hook.doneEach(function() {
+        var sidebar = document.querySelector('.sidebar-nav');
+        if (!sidebar) return;
+        var expanded = getExpanded();
+        sidebar.querySelectorAll('li').forEach(function(li) {
+          if (!hasDirectChildUl(li)) return;
+          if (!li.classList.contains('kb-collapsible')) {
+            li.classList.add('kb-collapsible');
+            var toggle = document.createElement('span');
+            toggle.className = 'kb-toggle';
+            toggle.textContent = '▸';
+            li.insertBefore(toggle, li.firstChild);
+            toggle.addEventListener('click', function(e) {
+              e.preventDefault();
+              e.stopPropagation();
+              var isExp = li.classList.toggle('kb-expanded');
+              var k = getKey(li);
+              var exp = getExpanded();
+              if (isExp) exp.add(k); else exp.delete(k);
+              saveExpanded(exp);
+            });
+          }
+          var shouldExpand = expanded.has(getKey(li)) || !!li.querySelector('.active');
+          li.classList.toggle('kb-expanded', shouldExpand);
+        });
+      });
+    };
+    window.$docsify.plugins = (window.$docsify.plugins || []).concat(sidebarCollapsePlugin);
   </script>
   <script src="docs/vendor/js/docsify.min.js"></script>
   <script src="docs/vendor/js/search.min.js"></script>
-  <!-- 侧边栏折叠插件 -->
-  <script src="https://cdn.jsdelivr.net/npm/docsify-sidebar-collapse@1.0.4/dist/docsify-sidebar-collapse.min.js"></script>
   <!-- 数学公式支持 -->
   <script src="docs/vendor/js/docsify-katex.min.js"></script>
   <link rel="stylesheet" href="docs/vendor/katex/katex.min.css">
