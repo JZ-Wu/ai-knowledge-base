@@ -75,6 +75,22 @@
       text-align: center;
     }
     .sidebar-nav li.kb-collapsible.kb-expanded > .kb-toggle { transform: rotate(90deg); }
+    /* 纯文本分组标题外包一层 span.kb-label，保持行内显示（覆盖主题对 span 的 display:block） */
+    .sidebar-nav li.kb-collapsible > .kb-label {
+      display: inline;
+      margin: 0;
+      padding: 0;
+      border: 0;
+      font: inherit;
+      color: inherit;
+      text-transform: none;
+    }
+    /* hover 时标题文字变主题色，与链接 hover 视觉一致 */
+    .sidebar-nav li.kb-collapsible:hover > .kb-toggle,
+    .sidebar-nav li.kb-collapsible:hover > .kb-label,
+    .sidebar-nav li.kb-collapsible:hover > strong {
+      color: var(--theme-color);
+    }
   </style>
   <link rel="stylesheet" href="docs/css/ai-sidebar.css">
 </head>
@@ -219,6 +235,15 @@
             toggle.className = 'kb-toggle';
             toggle.textContent = '▸';
             li.insertBefore(toggle, li.firstChild);
+            // 把 li 的直接纯文本子节点包进 span.kb-label，便于 hover 染色
+            Array.from(li.childNodes).forEach(function(node) {
+              if (node.nodeType === 3 && node.textContent.trim()) {
+                var label = document.createElement('span');
+                label.className = 'kb-label';
+                node.parentNode.insertBefore(label, node);
+                label.appendChild(node);
+              }
+            });
             var doToggle = function(e) {
               e.preventDefault();
               e.stopPropagation();
