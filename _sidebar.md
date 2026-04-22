@@ -185,6 +185,33 @@
   - [总览](/科研方法论/README.md)
   - [从 Evaluate Idea 到 Propose Idea](/科研方法论/从Evaluate_Idea到Propose_Idea.md)
 
+- **Idea 调研**
+  - [工作区说明](/idea-research/README.md)
+  - hier-affordance-seg
+    - [idea 说明](/idea-research/ideas/hier-affordance-seg/idea.md)
+    - [方案-白话详细版](/idea-research/ideas/hier-affordance-seg/方案-白话详细版.md)
+  - real2sim-home-deformable
+    - [★ 背景报告](/idea-research/ideas/real2sim-home-deformable/background-report.md)
+    - [idea 说明](/idea-research/ideas/real2sim-home-deformable/idea.md)
+    - 论文卡片
+      - [Track 1 · Real2Sim 管线](/idea-research/ideas/real2sim-home-deformable/wiki/papers/track1-real2sim-pipelines.md)
+      - [Track 2 · 可形变物理反推](/idea-research/ideas/real2sim-home-deformable/wiki/papers/track2-deformable-physics-id.md)
+      - [Track 3 · 家庭平台](/idea-research/ideas/real2sim-home-deformable/wiki/papers/track3-home-platforms.md)
+      - [Track 4 · VLA 数据需求](/idea-research/ideas/real2sim-home-deformable/wiki/papers/track4-vla-data-demand.md)
+    - 概念综述
+      - [派系划分](/idea-research/ideas/real2sim-home-deformable/wiki/concepts/routes-taxonomy.md)
+      - [可形变物理反推路线](/idea-research/ideas/real2sim-home-deformable/wiki/concepts/deformable-physics-id.md)
+      - [家庭平台矩阵](/idea-research/ideas/real2sim-home-deformable/wiki/concepts/home-platform-landscape.md)
+      - [VLA 数据画像](/idea-research/ideas/real2sim-home-deformable/wiki/concepts/vla-data-demand.md)
+    - 开放问题
+      - [可形变 real2sim 管线缺失](/idea-research/ideas/real2sim-home-deformable/wiki/gaps/gap-deformable-real-to-sim-pipeline.md)
+      - [多材质场景](/idea-research/ideas/real2sim-home-deformable/wiki/gaps/gap-multi-material-scene.md)
+      - [拓扑变化](/idea-research/ideas/real2sim-home-deformable/wiki/gaps/gap-topological-change.md)
+      - [单/少视角反推](/idea-research/ideas/real2sim-home-deformable/wiki/gaps/gap-single-view-id.md)
+      - [静态物体冷启动](/idea-research/ideas/real2sim-home-deformable/wiki/gaps/gap-static-object-id.md)
+      - [真实/合成数据混合](/idea-research/ideas/real2sim-home-deformable/wiki/gaps/gap-real-vs-generated-mix.md)
+      - [sim2real 消融缺失](/idea-research/ideas/real2sim-home-deformable/wiki/gaps/gap-deformable-sim2real-ablation.md)
+
 - **申请规划**
   - [当前状态快照](/申请规划/快照-2026-04.md)
   - [总览](/申请规划/README.md)
