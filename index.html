@@ -73,6 +73,7 @@
       text-align: center;
     }
     .sidebar-nav li.kb-collapsible.kb-expanded > .kb-toggle { transform: rotate(90deg); }
+    .sidebar-nav li.kb-collapsible > strong { cursor: pointer; }
   </style>
   <link rel="stylesheet" href="docs/css/ai-sidebar.css">
 </head>
@@ -217,7 +218,7 @@
             toggle.className = 'kb-toggle';
             toggle.textContent = '▸';
             li.insertBefore(toggle, li.firstChild);
-            toggle.addEventListener('click', function(e) {
+            var doToggle = function(e) {
               e.preventDefault();
               e.stopPropagation();
               var isExp = li.classList.toggle('kb-expanded');
@@ -225,6 +226,13 @@
               var exp = getExpanded();
               if (isExp) exp.add(k); else exp.delete(k);
               saveExpanded(exp);
+            };
+            toggle.addEventListener('click', doToggle);
+            // 点击 li 自身的标题区域（非链接、非嵌套列表）也触发折叠
+            li.addEventListener('click', function(e) {
+              if (e.target.closest('a')) return;                 // 链接正常跳转
+              if (e.target.closest('.kb-collapsible') !== li) return; // 让内层 li 自己处理
+              doToggle(e);
             });
           }
           var shouldExpand = expanded.has(getKey(li)) || !!li.querySelector('.active');
