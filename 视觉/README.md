@@ -31,7 +31,7 @@
 3D 数据处理、表示与理解
 - [3D稀疏卷积](3D视觉/3D稀疏卷积.md) — Hash Map、Rulebook、Implicit GEMM
 - [NeRF详解](3D视觉/NeRF详解.md) — 神经辐射场，体渲染方程，Instant-NGP 加速
-- [3D高斯溅射详解](3D视觉/3D高斯溅射详解.md) — 显式高斯基元 + 可微光栅化，实时渲染
+- [高斯溅射专题](3D视觉/高斯溅射/README.md) — 8 篇系列：3DGS 基础、2DGS、4DGS、加速压缩、生成式、物理仿真、SLAM、具身
 - [Point Transformer详解](3D视觉/Point_Transformer详解.md) — PTv1/v2/v3，向量注意力与序列化注意力
 
 ---
