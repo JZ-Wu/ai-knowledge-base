@@ -24,7 +24,7 @@ pip install -r server/requirements.txt
 python run.py
 ```
 
-浏览器打开 http://localhost:8000 即可。
+浏览器打开 http://localhost:8001 即可。
 
 ### 启动参数
 
@@ -61,7 +61,7 @@ ai-knowledge-base/
 ## 架构
 
 ```
-浏览器 (localhost:8000)
+浏览器 (localhost:8001)
   ├── Docsify 前端渲染 (index.html + .md 文件)
   ├── AI 侧边栏 (选中文字 → 对话 → AI 编辑文件)
   ├── 源码编辑器 (CodeMirror, 实时编辑 Markdown)

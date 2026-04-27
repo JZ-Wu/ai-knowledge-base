@@ -4,7 +4,7 @@ import os
 import subprocess
 import threading
 from collections.abc import Generator
-from server.config import CLAUDE_CLI, DOCS_ROOT, MAX_PAGE_CHARS
+from server.config import CLAUDE_CLI, DOCS_ROOT, MAX_PAGE_CHARS, MAX_PDF_CHARS
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +23,7 @@ _env = {
     "HOME": os.environ.get("HOME", os.environ.get("USERPROFILE", "")),
 }
 
-_ALLOWED_MODELS = {"claude-sonnet-4-6", "claude-haiku-4-5-20251001", "claude-opus-4-6"}
+_ALLOWED_MODELS = {"claude-sonnet-4-6", "claude-haiku-4-5-20251001", "claude-opus-4-6", "claude-opus-4-7"}
 
 # 只允许操作 .md 文件的工具集（不给 Bash/WebFetch 等危险工具）
 _ALLOWED_TOOLS = "Read,Edit,Write,Glob,Grep"
@@ -51,8 +51,14 @@ _CLI_TIMEOUT = 300
 
 def build_prompt(page_content: str, selected_text: str, messages: list[dict]) -> str:
     """将页面上下文、选中文字和对话历史合并为一个完整 prompt。"""
-    if len(page_content) > MAX_PAGE_CHARS:
-        page_content = page_content[:MAX_PAGE_CHARS] + "\n\n... (内容已截断)"
+    # 检测是否是 PDF 全文提取（frontmatter 含 source_pdf:）
+    is_pdf_extract = (
+        page_content.lstrip().startswith("---")
+        and "source_pdf:" in page_content[:800]
+    )
+    max_chars = MAX_PDF_CHARS if is_pdf_extract else MAX_PAGE_CHARS
+    if len(page_content) > max_chars:
+        page_content = page_content[:max_chars] + "\n\n... (内容已截断)"
 
     parts = [
         "你是一个 AI 知识库助手，帮助用户浏览和编辑一个个人 AI/ML 知识库。",
@@ -60,8 +66,22 @@ def build_prompt(page_content: str, selected_text: str, messages: list[dict]) ->
         "默认只回答问题和解释内容，不要修改任何文件。",
         "只有当用户明确要求修改/添加/删除知识库内容时，才编辑对应的 markdown 文件。",
         "编辑完成后告诉用户改了什么，让他们刷新页面查看。",
-        f"\n## 当前页面内容\n\n{page_content}",
     ]
+
+    if is_pdf_extract:
+        parts.append(
+            "\n## 阅读模式提示\n\n"
+            "当前页面是用户正在阅读的一篇 **学术论文 PDF 的自动抽取全文**（文件由 pymupdf 生成，页码以 `## Page N` 标记）。"
+            "回答规则：\n"
+            "1. **严格基于该 PDF 内容作答**，不臆测论文未写的细节；引用时标注页码，如 `(Page 3)` 或小节标题。\n"
+            "2. 若问题不在 PDF 范围内，明确说「这不在这篇论文里」，可补充你的背景知识但须标注来源。\n"
+            "3. 用户选中的文字 = 他在 PDF 中高亮的段落——**围绕该段落回答**，不要答非所问。\n"
+            "4. 抽取文本可能有断行、乱码、公式错位，遇到明显 OCR 噪声时结合上下文推断，并提示用户以 PDF 原文为准。\n"
+            "5. **不要改写任何文件**——PDF 阅读场景下一律只答问题。"
+        )
+
+    parts.append(f"\n## 当前页面内容\n\n{page_content}")
+
     if selected_text:
         parts.append(f"\n## 用户选中的文字\n\n{selected_text}")
 

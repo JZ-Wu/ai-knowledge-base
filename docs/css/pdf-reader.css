@@ -1,0 +1,283 @@
+/* ========== PDF Reader Layout ========== */
+
+:root {
+  --pdf-toolbar-h: 52px;
+  --pdf-bg: #525659;
+  --pdf-paper: #fff;
+  --pdf-toolbar-bg: rgba(33, 37, 43, 0.96);
+  --pdf-toolbar-fg: #e8e8e8;
+  --pdf-toolbar-border: #1a1d22;
+  --pdf-accent: #3F51B5;
+  --pdf-btn-hover: rgba(255, 255, 255, 0.12);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--pdf-bg);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif;
+  overflow: hidden;
+}
+
+/* ========== Top Toolbar ========== */
+
+.pdf-toolbar {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: var(--pdf-toolbar-h);
+  background: var(--pdf-toolbar-bg);
+  color: var(--pdf-toolbar-fg);
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  gap: 10px;
+  border-bottom: 1px solid var(--pdf-toolbar-border);
+  z-index: 100;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition: right 0.25s ease;
+}
+
+body.ai-sidebar-open .pdf-toolbar {
+  right: var(--ai-sidebar-w, 420px);
+}
+
+.pdf-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+  flex: 0 1 auto;
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding-right: 12px;
+  border-right: 1px solid rgba(255, 255, 255, 0.12);
+  margin-right: 4px;
+}
+
+.pdf-nav, .pdf-zoom, .pdf-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.pdf-actions { margin-left: auto; }
+
+.pdf-btn {
+  background: transparent;
+  border: none;
+  color: var(--pdf-toolbar-fg);
+  font-size: 14px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s;
+  min-width: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pdf-btn:hover { background: var(--pdf-btn-hover); }
+.pdf-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.pdf-btn:disabled:hover { background: transparent; }
+
+.pdf-btn.primary {
+  background: var(--pdf-accent);
+  color: #fff;
+}
+.pdf-btn.primary:hover { background: #303F9F; }
+
+#page-info {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  min-width: 60px;
+  text-align: center;
+  color: #ddd;
+}
+
+#page-input {
+  width: 44px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #fff;
+  border-radius: 4px;
+  padding: 3px 6px;
+  font-size: 13px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+#zoom-select {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #fff;
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 13px;
+  cursor: pointer;
+  outline: none;
+}
+
+#zoom-select option {
+  background: #2a2e35;
+  color: #fff;
+}
+
+/* ========== Viewer Area ========== */
+
+#pdf-viewer {
+  position: absolute;
+  top: var(--pdf-toolbar-h);
+  left: 0;
+  right: 0;
+  bottom: 0;
+  overflow-y: auto;
+  overflow-x: auto;
+  padding: 24px 0 40px;
+  transition: right 0.25s ease;
+}
+
+body.ai-sidebar-open #pdf-viewer {
+  right: var(--ai-sidebar-w, 420px);
+}
+
+.pdf-pages {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  min-width: min-content;
+}
+
+.pdf-page {
+  position: relative;
+  background: var(--pdf-paper);
+  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.35);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.pdf-page canvas {
+  display: block;
+}
+
+/* ========== Text Layer (selectable) ========== */
+
+.pdf-page .textLayer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  opacity: 1;
+  line-height: 1;
+  -webkit-font-smoothing: antialiased;
+  pointer-events: auto;
+  user-select: text;
+  -webkit-user-select: text;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+}
+
+.pdf-page .textLayer :is(span, br) {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+}
+
+.pdf-page .textLayer span.markedContent {
+  top: 0;
+  height: 0;
+}
+
+.pdf-page .textLayer ::selection {
+  background: rgba(63, 81, 181, 0.35);
+  color: transparent;
+}
+.pdf-page .textLayer ::-moz-selection {
+  background: rgba(63, 81, 181, 0.35);
+  color: transparent;
+}
+
+/* ========== Loading / Error ========== */
+
+.pdf-status {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  color: #ccc;
+  text-align: center;
+  font-size: 15px;
+}
+
+.pdf-status .spinner {
+  width: 32px; height: 32px;
+  margin: 0 auto 12px;
+  border: 3px solid rgba(255, 255, 255, 0.2);
+  border-top-color: var(--pdf-accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ========== Float AI Button — sits near selection ========== */
+
+.ai-float-btn {
+  position: absolute;
+  z-index: 90;
+}
+
+/* ========== Embed Mode (iframe inside Docsify page) ========== */
+
+/* Hide controls that only make sense in standalone full-page mode */
+html.pdf-embed .pdf-standalone-only {
+  display: none !important;
+}
+
+/* Toolbar should be absolute inside iframe, not viewport-fixed */
+html.pdf-embed .pdf-toolbar {
+  position: absolute;
+}
+
+/* In embed mode, don't reserve space for a sidebar — parent's sidebar is outside the iframe */
+html.pdf-embed body.ai-sidebar-open .pdf-toolbar,
+html.pdf-embed body.ai-sidebar-open #pdf-viewer {
+  right: 0;
+}
+
+/* Embed-mode "Ask AI" floating button — talks to parent's sidebar */
+.pdf-embed-ask-btn {
+  position: absolute;
+  z-index: 90;
+  background: var(--pdf-accent);
+  color: #fff;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  transition: background 0.15s, transform 0.1s;
+}
+
+.pdf-embed-ask-btn:hover {
+  background: #303F9F;
+  transform: translateY(-1px);
+}
+
+/* ========== Mobile ========== */
+
+@media (max-width: 768px) {
+  .pdf-title { max-width: 120px; font-size: 12px; }
+  .pdf-btn { padding: 5px 7px; font-size: 13px; }
+  #page-info { min-width: 50px; font-size: 12px; }
+  body.ai-sidebar-open .pdf-toolbar,
+  body.ai-sidebar-open #pdf-viewer { right: 0; }
+}

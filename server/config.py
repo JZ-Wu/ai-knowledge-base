@@ -20,7 +20,9 @@ CLAUDE_CLI = os.getenv("CLAUDE_CLI", _default_claude)
 DOCS_ROOT = Path(__file__).parent.parent.resolve()
 
 # 最大页面内容长度 (字符数，防止超出 context window)
+# 普通 .md 页面用 MAX_PAGE_CHARS；PDF 全文提取文件用 MAX_PDF_CHARS（通常更长）
 MAX_PAGE_CHARS = 50000
+MAX_PDF_CHARS = 200000
 
 # 局域网访问密码 (为空则不启用认证)
 ACCESS_PASSWORD = os.getenv("ACCESS_PASSWORD", "")

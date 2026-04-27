@@ -12,6 +12,7 @@
   var abortController = null;
   var sessionId = ""; // Claude CLI 会话 ID，用于 resume 多轮对话
   var lastSentPagePath = ""; // 上次发送给 AI 的页面路径，避免重复发送相同页面内容
+  var quotedReply = null; // {text, msgIdx} — 用户选中 AI 回复后追问引用
 
   // ========== DOM refs ==========
   var sidebar = document.getElementById("ai-sidebar");
@@ -33,6 +34,20 @@
   var contextBar = document.getElementById("ai-context-bar");
   var contextText = document.getElementById("ai-context-text");
   var lastContextTokens = 0; // 最近一次 input_tokens（近似上下文大小）
+  var quoteBtn = document.getElementById("ai-quote-btn");
+  var quoteChip = document.getElementById("ai-quote-chip");
+
+  // ── 滚动状态：必须在 loadHistory() 之前初始化，因为 loadHistory →
+  //    appendMessageDOM → scrollToBottom → updateScrollBtn 会读 scrollBtn.style，
+  //    对 undefined 取属性会抛错并被 loadHistory 的 catch 静默吞掉，导致
+  //    整段历史在刷新后渲染失败。
+  var userNearBottom = true;
+  var scrollBtn = document.createElement("button");
+  scrollBtn.className = "ai-scroll-bottom-btn";
+  scrollBtn.innerHTML = "&#8595;";
+  scrollBtn.title = "跳到底部";
+  scrollBtn.style.display = "none";
+  if (sidebar) sidebar.appendChild(scrollBtn);
 
   // ========== History Persistence ==========
 
@@ -86,6 +101,8 @@
     sessionId = "";
     lastSentPagePath = "";
     lastContextTokens = 0;
+    quotedReply = null;
+    if (typeof renderQuoteChip === "function") renderQuoteChip();
     updateContextBar();
     sessionStorage.removeItem(STORAGE_KEY);
   }
@@ -167,12 +184,23 @@
 
   // ========== Context Usage Display ==========
 
-  // 模型 context window 大小（tokens）
-  var MODEL_CONTEXT = {
-    "claude-opus-4-6": 1000000,
-    "claude-sonnet-4-6": 200000,
-    "claude-haiku-4-5-20251001": 200000,
-  };
+  // 模型 context window 大小（tokens）— 从 ai-sidebar-mount.js 的 MODELS
+  // 列表派生，保持单一真理来源。挂载脚本未加载时退回到内联表。
+  var MODEL_CONTEXT = (function () {
+    var src = window.AI_SIDEBAR_MODELS;
+    if (src && src.length) {
+      var m = {};
+      for (var i = 0; i < src.length; i++) m[src[i].value] = src[i].ctx;
+      return m;
+    }
+    return {
+      "claude-opus-4-7": 1000000,
+      "claude-opus-4-6": 1000000,
+      "claude-sonnet-4-6": 200000,
+      "claude-haiku-4-5-20251001": 200000,
+    };
+  })();
+  var DEFAULT_MODEL = window.AI_SIDEBAR_DEFAULT_MODEL || "claude-opus-4-7";
 
   function updateContextBar() {
     if (!contextBar || !contextText) return;
@@ -180,7 +208,7 @@
       contextBar.style.display = "none";
       return;
     }
-    var model = modelSelect ? modelSelect.value : "claude-sonnet-4-6";
+    var model = modelSelect ? modelSelect.value : DEFAULT_MODEL;
     var maxCtx = MODEL_CONTEXT[model] || 200000;
     var pct = (lastContextTokens / maxCtx * 100).toFixed(1);
     var kTokens = (lastContextTokens / 1000).toFixed(1);
@@ -376,15 +404,15 @@
     }
   }
 
-  function fetchChat(pagePath, messages, sid, images) {
+  function fetchChat(pagePath, messages, sid, images, selection) {
     return fetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         page_path: pagePath,
-        selected_text: selectedText,
+        selected_text: selection || "",
         messages: messages,
-        model: modelSelect ? modelSelect.value : "claude-opus-4-6",
+        model: modelSelect ? modelSelect.value : DEFAULT_MODEL,
         thinking: thinkingCheckbox ? thinkingCheckbox.checked : false,
         images: images,
         session_id: sid,
@@ -393,9 +421,96 @@
     });
   }
 
+  function clearSelection() {
+    selectedText = "";
+    if (contextEl) contextEl.innerHTML = "";
+  }
+
+  // ========== Quote Reply (选中 AI 回复继续追问) ==========
+  //
+  // 监听 messagesEl 内 .ai-msg.assistant 的选区。命中时浮出"引用追问"按钮，
+  // 点击后保存到 quotedReply 状态并显示 chip。发送时把 <quoted_from> 块
+  // 作为前缀注入用户消息（不直接塞 textarea，避免用户编辑误删）。
+
+  function getAssistantMsgIdx(msgEl) {
+    var assistantEls = messagesEl.querySelectorAll(".ai-msg.assistant");
+    var domIdx = Array.from(assistantEls).indexOf(msgEl);
+    if (domIdx < 0) return -1;
+    var count = 0;
+    for (var i = 0; i < chatMessages.length; i++) {
+      if (chatMessages[i].role === "assistant") {
+        if (count === domIdx) return i;
+        count++;
+      }
+    }
+    return -1;
+  }
+
+  function renderQuoteChip() {
+    if (!quoteChip) return;
+    if (!quotedReply) {
+      quoteChip.style.display = "none";
+      quoteChip.innerHTML = "";
+      return;
+    }
+    var preview = quotedReply.text.length > 80
+      ? quotedReply.text.slice(0, 80) + "…"
+      : quotedReply.text;
+    quoteChip.innerHTML =
+      '<span class="ai-quote-chip-icon">&#128172;</span>' +
+      '<span class="ai-quote-chip-text">' + escapeHtml(preview) + '</span>' +
+      '<button class="ai-quote-chip-close" title="取消引用">&times;</button>';
+    quoteChip.style.display = "flex";
+    quoteChip.querySelector(".ai-quote-chip-close").addEventListener("click", function () {
+      quotedReply = null;
+      renderQuoteChip();
+    });
+  }
+
+  if (messagesEl && quoteBtn) {
+    messagesEl.addEventListener("mouseup", function () {
+      setTimeout(function () {
+        var sel = window.getSelection();
+        var text = sel ? sel.toString().trim() : "";
+        if (!text) { quoteBtn.style.display = "none"; return; }
+        var anchor = sel.anchorNode;
+        var msgEl = anchor && anchor.nodeType === 1
+          ? anchor.closest(".ai-msg.assistant")
+          : (anchor && anchor.parentElement && anchor.parentElement.closest(".ai-msg.assistant"));
+        if (!msgEl) { quoteBtn.style.display = "none"; return; }
+        var rect = sel.getRangeAt(0).getBoundingClientRect();
+        if (!rect || (!rect.width && !rect.height)) { quoteBtn.style.display = "none"; return; }
+        quoteBtn.dataset.text = text;
+        quoteBtn.dataset.msgIdx = String(getAssistantMsgIdx(msgEl));
+        quoteBtn.style.top = (rect.top - 32) + "px";
+        quoteBtn.style.left = (rect.left + rect.width / 2 - 50) + "px";
+        quoteBtn.style.display = "block";
+      }, 10);
+    });
+
+    document.addEventListener("mousedown", function (e) {
+      if (e.target === quoteBtn || quoteBtn.contains(e.target)) return;
+      quoteBtn.style.display = "none";
+    });
+
+    quoteBtn.addEventListener("click", function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      var text = quoteBtn.dataset.text || "";
+      var msgIdx = parseInt(quoteBtn.dataset.msgIdx || "-1", 10);
+      if (!text) return;
+      quotedReply = { text: text, msgIdx: msgIdx };
+      renderQuoteChip();
+      quoteBtn.style.display = "none";
+      var sel = window.getSelection();
+      if (sel) sel.removeAllRanges();
+      if (inputEl) inputEl.focus();
+    });
+  }
+
   async function sendMessage() {
-    var text = inputEl.value.trim();
-    if (!text && pendingImages.length === 0) return;
+    var rawText = inputEl.value.trim();
+    if (!rawText && pendingImages.length === 0 && !quotedReply) return;
     if (isStreaming) return;
 
     var images = pendingImages.slice();
@@ -404,6 +519,20 @@
 
     inputEl.value = "";
     filesEdited = false;
+
+    // 选中文本只在"本次"消息生效——发送时随这条消息带上，发送完即清。
+    // 之后的消息默认无 selection（除非用户重新选中并 Ask AI）。
+    var sentSelection = selectedText;
+
+    // 引用追问：把选中的 AI 回复片段作为 <quoted_from> 块前缀注入用户消息，
+    // 后端无需改造，模型会优先围绕这段引用回答。
+    var text = rawText;
+    if (quotedReply) {
+      var idxAttr = quotedReply.msgIdx >= 0 ? ' msg_idx="' + quotedReply.msgIdx + '"' : "";
+      text = '<quoted_from' + idxAttr + '>\n' + quotedReply.text + '\n</quoted_from>\n\n' + rawText;
+      quotedReply = null;
+      renderQuoteChip();
+    }
 
     chatMessages.push({ role: "user", content: text });
     appendMessageDOM("user", text, images);
@@ -434,8 +563,10 @@
       // 始终发送完整历史，后端根据 session_id 决定是 resume 还是新建
       var sendPagePath = currentPagePath;
 
-      var response = await fetchChat(sendPagePath, chatMessages, sessionId, images);
+      var response = await fetchChat(sendPagePath, chatMessages, sessionId, images, sentSelection);
       lastSentPagePath = currentPagePath;
+      // 一次性消费：发出请求后立刻清掉本地选中态，下一条消息默认无 selection。
+      clearSelection();
 
       if (!response.ok) throw new Error("API error: " + response.status);
 
@@ -560,10 +691,18 @@
       saveHistory();
 
       if (filesEdited) {
+        // 文件已变，原 Claude 会话里的页面内容已过期。
+        // 丢弃 sessionId 但保留 chatMessages：下一条消息会走新会话、重新注入最新文件内容，
+        // 同时前端完整历史仍通过 build_prompt 传给 Claude，对话连续性不断。
+        sessionId = "";
+        lastSentPagePath = "";
+        saveHistory();
+
         var refreshEl = document.createElement("div");
         refreshEl.className = "ai-refresh-hint";
         refreshEl.innerHTML =
-          'Files modified. <a href="javascript:location.reload()">Refresh</a> to see changes.';
+          'Files modified. <a href="javascript:location.reload()">Refresh</a> to see changes. ' +
+          '<span class="ai-refresh-note">(下一条消息将重新加载文件内容)</span>';
         messagesEl.appendChild(refreshEl);
         scrollToBottom();
       }
@@ -818,8 +957,8 @@
   }
 
   // ── 智能滚动：只在用户已经在底部附近时才自动滚动 ──
-  var userNearBottom = true;
-
+  // userNearBottom 和 scrollBtn 已在脚本顶部初始化（见 DOM refs 上方），
+  // 这里只挂事件。
   messagesEl.addEventListener("scroll", function () {
     var threshold = 80;
     userNearBottom =
@@ -827,13 +966,6 @@
     updateScrollBtn();
   });
 
-  // 悬浮"跳到底部"按钮
-  var scrollBtn = document.createElement("button");
-  scrollBtn.className = "ai-scroll-bottom-btn";
-  scrollBtn.innerHTML = "&#8595;";
-  scrollBtn.title = "跳到底部";
-  scrollBtn.style.display = "none";
-  sidebar.appendChild(scrollBtn);
   scrollBtn.addEventListener("click", function () {
     messagesEl.scrollTop = messagesEl.scrollHeight;
     userNearBottom = true;
@@ -914,4 +1046,42 @@
     div.textContent = text;
     return div.innerHTML;
   }
+
+  // Same-origin iframe bridge: let embedded tools (e.g. PDF reader) open this sidebar
+  // with the selected text and optional context-path override (so the PDF reader can
+  // tell the sidebar to use the PDF extract .md as page context instead of the outer
+  // paper card). Called via window.parent.__aiSidebar.openWithSelection(text, path).
+  // 外部（Docsify 插件 / iframe）覆写 AI 上下文页面路径：例如维基页内嵌的 PDF，
+  // 其抽取全文放在另一个 .md 文件里，插件要告诉侧栏"真正的上下文在那边"。
+  function setPagePath(path) {
+    if (!path) return;
+    path = String(path).replace(/^\/+/, "").replace(/\.md$/i, "");
+    if (path !== currentPagePath) {
+      currentPagePath = path;
+      lastSentPagePath = ""; // 下次发送时会把新页面内容带上
+    }
+  }
+
+  window.__aiSidebar = {
+    openWithSelection: function (text, contextPath) {
+      openSidebar(text || "");
+      // openSidebar() resets currentPagePath from hash — apply override AFTER.
+      if (contextPath) {
+        setPagePath(contextPath);
+        if (contextEl && text) {
+          contextEl.innerHTML =
+            '<div class="context-label">Selected from PDF:</div>' +
+            '<div class="context-text">' + escapeHtml(text) + "</div>";
+        }
+      }
+    },
+    setPagePath: setPagePath,
+    isOpen: function () {
+      return sidebar.classList.contains("open");
+    },
+  };
+
+  // Sentinel for ai-sidebar-mount.js's bootstrap dep check — avoids loading
+  // this script twice if bootstrapAiSidebar() is called more than once.
+  window.__aiSidebarLoaded = true;
 })();

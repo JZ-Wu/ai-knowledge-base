@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PDF Reader</title>
+  <link rel="stylesheet" href="/docs/css/pdf-reader.css">
+  <!-- Mode detection MUST run before body renders, so embed styles apply immediately -->
+  <script>
+    (function () {
+      var params = new URLSearchParams(window.location.search);
+      var isEmbed = params.get("embed") === "1";
+      window.__PDF_EMBED__ = isEmbed;
+      if (isEmbed) {
+        document.documentElement.classList.add("pdf-embed");
+      }
+
+      var pdfParam = params.get("pdf");
+      if (pdfParam) {
+        // Derive context .md path: strip .pdf suffix. In standalone mode, set hash
+        // so ai-sidebar.js's getPagePath() reads the sibling extract file.
+        // In embed mode the PARENT already has the right hash (the page being viewed),
+        // and we delegate AI calls to the parent's sidebar — so DON'T touch hash.
+        var contextPath = pdfParam.replace(/\.pdf$/i, "");
+        if (!isEmbed && !window.location.hash) {
+          history.replaceState(null, "", window.location.pathname + window.location.search + "#/" + contextPath);
+        }
+        window.__PDF_URL__ = "/" + pdfParam.replace(/^\/+/, "");
+        window.__PDF_TITLE__ = params.get("title") || pdfParam.split("/").pop();
+        window.__CONTEXT_PATH__ = contextPath;
+      }
+    })();
+  </script>
+  <!-- ai-sidebar.css only needed in standalone mode -->
+  <script>
+    if (!window.__PDF_EMBED__) {
+      var l = document.createElement("link");
+      l.rel = "stylesheet";
+      l.href = "/docs/css/ai-sidebar.css";
+      document.head.appendChild(l);
+    }
+  </script>
+</head>
+<body>
+
+  <!-- ===== Toolbar ===== -->
+  <div class="pdf-toolbar">
+    <span class="pdf-title" id="pdf-title">Loading…</span>
+
+    <div class="pdf-nav">
+      <button class="pdf-btn" id="prev-page" title="Previous page">◀</button>
+      <input type="text" id="page-input" value="1">
+      <span id="page-info">/ —</span>
+      <button class="pdf-btn" id="next-page" title="Next page">▶</button>
+    </div>
+
+    <div class="pdf-zoom">
+      <button class="pdf-btn" id="zoom-out" title="Zoom out">−</button>
+      <select id="zoom-select" title="Zoom">
+        <option value="page-width" selected>Fit Width</option>
+        <option value="page-fit">Fit Page</option>
+        <option value="0.75">75%</option>
+        <option value="1">100%</option>
+        <option value="1.25">125%</option>
+        <option value="1.5">150%</option>
+        <option value="2">200%</option>
+      </select>
+      <button class="pdf-btn" id="zoom-in" title="Zoom in">+</button>
+    </div>
+
+    <div class="pdf-actions">
+      <button class="pdf-btn pdf-standalone-only" id="back-btn" title="Back to KB">← 返回</button>
+      <button class="pdf-btn primary" id="ai-open-btn" title="Ask AI (Ctrl+Shift+A)">AI 助手</button>
+    </div>
+  </div>
+
+  <!-- ===== Viewer ===== -->
+  <div id="pdf-viewer">
+    <div class="pdf-pages" id="pdf-pages"></div>
+    <div class="pdf-status" id="pdf-status">
+      <div class="spinner"></div>
+      <div id="pdf-status-text">加载 PDF 中…</div>
+    </div>
+  </div>
+
+  <!-- ===== AI Sidebar slot — filled by ai-sidebar-mount.js in standalone mode only.
+       In embed mode the slot stays empty and the parent window owns the sidebar. ===== -->
+  <div id="ai-sidebar-slot"></div>
+
+  <!-- ===== Embed-mode floating "Ask AI" button (talks to parent) ===== -->
+  <button id="pdf-embed-ask-btn" class="pdf-embed-ask-btn" style="display:none">Ask AI</button>
+
+  <!-- ===== Scripts =====
+       Standalone mode: bootstrapAiSidebar handles markup + all deps
+       (marked, DOMPurify, katex, ai-sidebar.js) in one shot.
+       Embed mode: skip — the iframe never owns its own sidebar. -->
+  <script>
+    if (!window.__PDF_EMBED__) {
+      var mountScript = document.createElement("script");
+      mountScript.src = "/docs/js/ai-sidebar-mount.js?v=3";
+      mountScript.onload = function () {
+        window.bootstrapAiSidebar({
+          title: "AI Assistant · PDF 阅读",
+          placeholder: "就这篇论文提问，选中段落后点浮动按钮更精准",
+        });
+      };
+      document.body.appendChild(mountScript);
+    }
+  </script>
+
+  <!-- ===== PDF.js Viewer ===== -->
+  <script type="module">
+    import * as pdfjsLib from "/docs/vendor/pdfjs/build/pdf.mjs";
+    pdfjsLib.GlobalWorkerOptions.workerSrc = "/docs/vendor/pdfjs/build/pdf.worker.mjs";
+
+    // ===== State =====
+    const isEmbed = !!window.__PDF_EMBED__;
+    const pdfUrl = window.__PDF_URL__;
+    const pdfTitle = window.__PDF_TITLE__ || "PDF";
+
+    const viewer = document.getElementById("pdf-viewer");
+    const pagesEl = document.getElementById("pdf-pages");
+    const statusEl = document.getElementById("pdf-status");
+    const statusText = document.getElementById("pdf-status-text");
+    const titleEl = document.getElementById("pdf-title");
+    const pageInput = document.getElementById("page-input");
+    const pageInfo = document.getElementById("page-info");
+    const zoomSelect = document.getElementById("zoom-select");
+    const prevBtn = document.getElementById("prev-page");
+    const nextBtn = document.getElementById("next-page");
+    const zoomInBtn = document.getElementById("zoom-in");
+    const zoomOutBtn = document.getElementById("zoom-out");
+    const backBtn = document.getElementById("back-btn");
+    const aiOpenBtn = document.getElementById("ai-open-btn");
+    const embedAskBtn = document.getElementById("pdf-embed-ask-btn");
+
+    titleEl.textContent = pdfTitle;
+
+    let pdfDoc = null;
+    let currentZoom = "page-width";   // "page-width" | "page-fit" | numeric string
+    let pageCount = 0;
+    let renderedPages = new Map();    // pageNum -> {container, width, height}
+    let currentPage = 1;
+    let renderTaskId = 0;             // bumped on every zoom change
+
+    // ===== Helpers =====
+    function setStatus(msg, show = true) {
+      statusText.textContent = msg;
+      statusEl.style.display = show ? "block" : "none";
+    }
+
+    function computeScale(page) {
+      const baseViewport = page.getViewport({ scale: 1 });
+      const available = viewer.clientWidth - 48;  // padding
+      if (currentZoom === "page-width") {
+        return available / baseViewport.width;
+      }
+      if (currentZoom === "page-fit") {
+        const availableH = viewer.clientHeight - 48;
+        return Math.min(available / baseViewport.width, availableH / baseViewport.height);
+      }
+      return parseFloat(currentZoom) || 1;
+    }
+
+    // ===== Two-phase rendering =====
+    // Phase 1: setupPlaceholders() — for every page, compute viewport dimensions
+    //   (metadata-only, very fast) and create/resize an empty container. After this,
+    //   scroll height is accurate and the user can scroll anywhere immediately.
+    // Phase 2: renderPageCanvas(n) — actually paint the canvas + text layer for page n.
+    //   Called on-demand by renderVisiblePages() when a page enters viewport.
+    //
+    // This is the standard PDF viewer virtualization trick: a 24-page PDF no longer
+    // blocks the main thread for seconds during initial load — only page 1 (and its
+    // neighbors via buffer) render up front; the rest render lazily on scroll.
+
+    async function setupPlaceholders() {
+      const taskId = renderTaskId;
+      for (let i = 1; i <= pageCount; i++) {
+        if (taskId !== renderTaskId) return;
+        const page = await pdfDoc.getPage(i);
+        if (taskId !== renderTaskId) return;
+        const scale = computeScale(page);
+        const viewport = page.getViewport({ scale });
+
+        let info = renderedPages.get(i);
+        if (!info) {
+          const container = document.createElement("div");
+          container.className = "pdf-page";
+          container.dataset.pageNum = i;
+          const canvas = document.createElement("canvas");
+          const textLayerDiv = document.createElement("div");
+          textLayerDiv.className = "textLayer";
+          container.appendChild(canvas);
+          container.appendChild(textLayerDiv);
+          pagesEl.appendChild(container);
+          info = { container, width: 0, height: 0, rendered: false, rendering: false };
+          renderedPages.set(i, info);
+        }
+        info.container.style.width = viewport.width + "px";
+        info.container.style.height = viewport.height + "px";
+        info.width = viewport.width;
+        info.height = viewport.height;
+        info.rendered = false; // scale may have changed — mark dirty
+      }
+    }
+
+    async function renderPageCanvas(pageNum) {
+      const info = renderedPages.get(pageNum);
+      if (!info || info.rendering || info.rendered) return;
+      info.rendering = true;
+      const taskId = renderTaskId;
+      try {
+        const page = await pdfDoc.getPage(pageNum);
+        if (taskId !== renderTaskId) return;
+        const scale = computeScale(page);
+        const devicePixelRatio = window.devicePixelRatio || 1;
+        const viewport = page.getViewport({ scale });
+
+        const canvas = info.container.querySelector("canvas");
+        const textLayerDiv = info.container.querySelector(".textLayer");
+        textLayerDiv.innerHTML = "";
+
+        canvas.width = Math.floor(viewport.width * devicePixelRatio);
+        canvas.height = Math.floor(viewport.height * devicePixelRatio);
+        canvas.style.width = viewport.width + "px";
+        canvas.style.height = viewport.height + "px";
+        info.container.style.width = viewport.width + "px";
+        info.container.style.height = viewport.height + "px";
+
+        const ctx = canvas.getContext("2d");
+        const transform = devicePixelRatio !== 1 ? [devicePixelRatio, 0, 0, devicePixelRatio, 0, 0] : null;
+        await page.render({ canvasContext: ctx, viewport, transform }).promise;
+        if (taskId !== renderTaskId) return;
+
+        textLayerDiv.style.setProperty("--scale-factor", viewport.scale);
+        textLayerDiv.style.width = viewport.width + "px";
+        textLayerDiv.style.height = viewport.height + "px";
+        const textContent = await page.getTextContent();
+        if (taskId !== renderTaskId) return;
+
+        await pdfjsLib.renderTextLayer({
+          textContentSource: textContent,
+          container: textLayerDiv,
+          viewport,
+          textDivs: [],
+        }).promise;
+
+        info.width = viewport.width;
+        info.height = viewport.height;
+        info.rendered = true;
+      } finally {
+        info.rendering = false;
+      }
+    }
+
+    // Only render pages that are in or near the current viewport (±1 viewport buffer).
+    function renderVisiblePages() {
+      const viewerTop = viewer.scrollTop;
+      const viewerBottom = viewerTop + viewer.clientHeight;
+      const buffer = viewer.clientHeight;
+      for (const [num, info] of renderedPages) {
+        const top = info.container.offsetTop;
+        const bottom = top + info.height;
+        const inView = bottom >= viewerTop - buffer && top <= viewerBottom + buffer;
+        if (inView) renderPageCanvas(num);
+      }
+    }
+
+    async function renderAll() {
+      ++renderTaskId;
+      await setupPlaceholders();
+      renderVisiblePages();
+    }
+
+    // ===== Scroll to page =====
+    function scrollToPage(pageNum) {
+      const info = renderedPages.get(pageNum);
+      if (!info) return;
+      const offsetTop = info.container.offsetTop - 16;
+      viewer.scrollTo({ top: offsetTop, behavior: "smooth" });
+    }
+
+    // ===== Track current page on scroll =====
+    function updateCurrentPageFromScroll() {
+      const viewerTop = viewer.scrollTop;
+      const viewerMid = viewerTop + viewer.clientHeight / 3;
+      let bestPage = 1;
+      for (const [num, info] of renderedPages) {
+        if (info.container.offsetTop <= viewerMid) bestPage = num;
+        else break;
+      }
+      if (bestPage !== currentPage) {
+        currentPage = bestPage;
+        pageInput.value = bestPage;
+      }
+    }
+
+    // ===== Load PDF =====
+    async function load() {
+      if (!pdfUrl) {
+        setStatus("缺少参数：请用 ?pdf=<path> 指定 PDF 路径");
+        return;
+      }
+      try {
+        setStatus("加载 PDF 中…");
+        const loadingTask = pdfjsLib.getDocument({
+          url: pdfUrl,
+          cMapUrl: "/docs/vendor/pdfjs/web/cmaps/",
+          cMapPacked: true,
+          standardFontDataUrl: "/docs/vendor/pdfjs/web/standard_fonts/",
+        });
+        pdfDoc = await loadingTask.promise;
+        pageCount = pdfDoc.numPages;
+        pageInfo.textContent = "/ " + pageCount;
+        pageInput.max = pageCount;
+        setStatus("", false);
+        await renderAll();
+        lastViewerWidth = viewer.clientWidth;
+      } catch (e) {
+        console.error(e);
+        setStatus("加载失败：" + (e.message || e));
+      }
+    }
+
+    // ===== Zoom change (re-render at new scale, reusing existing page containers) =====
+    async function setZoom(value) {
+      currentZoom = value;
+      if (zoomSelect.value !== value) {
+        const exists = Array.from(zoomSelect.options).some((o) => o.value === value);
+        if (exists) zoomSelect.value = value;
+      }
+      // Don't clear pagesEl — renderPage() reuses existing containers and updates scale
+      // in place. Pages transition smoothly instead of flashing to empty.
+      await renderAll();
+      scrollToPage(currentPage);
+    }
+
+    function stepZoom(delta) {
+      const numeric = parseFloat(currentZoom);
+      const base = isNaN(numeric) ? 1 : numeric;
+      const next = Math.max(0.25, Math.min(4, base + delta));
+      setZoom(next.toFixed(2));
+    }
+
+    // ===== Event Wiring =====
+    zoomSelect.addEventListener("change", (e) => setZoom(e.target.value));
+    zoomInBtn.addEventListener("click", () => stepZoom(0.2));
+    zoomOutBtn.addEventListener("click", () => stepZoom(-0.2));
+
+    prevBtn.addEventListener("click", () => scrollToPage(Math.max(1, currentPage - 1)));
+    nextBtn.addEventListener("click", () => scrollToPage(Math.min(pageCount, currentPage + 1)));
+
+    pageInput.addEventListener("change", () => {
+      const n = parseInt(pageInput.value, 10);
+      if (n >= 1 && n <= pageCount) scrollToPage(n);
+      else pageInput.value = currentPage;
+    });
+
+    if (backBtn) {
+      backBtn.addEventListener("click", () => {
+        window.location.href = "/";
+      });
+    }
+
+    let scrollRenderTimer;
+    viewer.addEventListener("scroll", () => {
+      requestAnimationFrame(updateCurrentPageFromScroll);
+      // Debounced lazy-render: as user scrolls, render newly-visible pages.
+      // 300ms lets the user blast through many pages without triggering renders
+      // for pages they scrolled past; only the page they settle on gets rendered.
+      clearTimeout(scrollRenderTimer);
+      scrollRenderTimer = setTimeout(renderVisiblePages, 300);
+    });
+
+    // ===== Drag-aware resize handler =====
+    // When parent page drags the AI-sidebar width, the iframe's window fires resize
+    // events continuously. Re-rendering 24 PDF pages each time is too expensive → lag.
+    // Strategy:
+    //   - 400ms debounce on resize events.
+    //   - If parent is still mid-drag when timer fires, keep polling every 150ms.
+    //   - Also listen for parent's mouseup to trigger settled-render immediately.
+    //   - Skip if viewer width didn't actually change (<5px delta).
+    let resizeTimer;
+    let lastViewerWidth = 0;
+    let pendingResize = false;
+
+    function isParentResizing() {
+      try {
+        return window.parent && window.parent !== window &&
+               window.parent.document.body.classList.contains("ai-sidebar-resizing");
+      } catch (e) {
+        return false;
+      }
+    }
+
+    function performSettledResize() {
+      if (isParentResizing()) {
+        // Still dragging — keep polling
+        resizeTimer = setTimeout(performSettledResize, 150);
+        return;
+      }
+      if (Math.abs(viewer.clientWidth - lastViewerWidth) < 5) {
+        pendingResize = false;
+        return;
+      }
+      lastViewerWidth = viewer.clientWidth;
+      pendingResize = false;
+      setZoom(currentZoom);
+    }
+
+    window.addEventListener("resize", () => {
+      if (currentZoom !== "page-width" && currentZoom !== "page-fit") return;
+      pendingResize = true;
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(performSettledResize, 400);
+    });
+
+    // When parent finishes dragging, fire a quicker settled-render.
+    try {
+      if (window.parent && window.parent !== window) {
+        window.parent.document.addEventListener("mouseup", () => {
+          if (pendingResize && !isParentResizing()) {
+            clearTimeout(resizeTimer);
+            resizeTimer = setTimeout(performSettledResize, 80);
+          }
+        }, true);
+      }
+    } catch (_) { /* cross-origin — skip */ }
+
+    // ===== AI integration =====
+    // In STANDALONE mode, ai-sidebar.js runs in this window and handles its own
+    // mouseup → floating button → openSidebar flow. We don't interfere.
+    //
+    // In EMBED mode, ai-sidebar.js is NOT loaded here. We detect selection and
+    // bridge to the parent window's __aiSidebar API (same-origin, direct call).
+    if (isEmbed) {
+      let lastSelectedText = "";
+
+      function getSelText() {
+        const sel = window.getSelection();
+        return sel ? sel.toString().trim() : "";
+      }
+
+      // Position the floating button so it stays inside the iframe viewport.
+      // If selection spans multiple paragraphs and rect.bottom is near the bottom
+      // of the viewport, placing the button below the selection would push it
+      // outside body (which has overflow:hidden) and clip it. In that case we
+      // place the button above the selection instead, then clamp to viewport.
+      function placeAskBtn(rect) {
+        var viewH = window.innerHeight;
+        var viewW = window.innerWidth;
+        var btnH = embedAskBtn.offsetHeight || 32;
+        var btnW = embedAskBtn.offsetWidth || 90;
+        var margin = 6;
+
+        var top = rect.bottom + margin;
+        if (top + btnH + margin > viewH) {
+          top = rect.top - btnH - margin;
+        }
+        top = Math.max(margin, Math.min(top, viewH - btnH - margin));
+
+        var left = Math.max(0, rect.right - 70);
+        left = Math.max(margin, Math.min(left, viewW - btnW - margin));
+
+        embedAskBtn.style.top = (window.scrollY + top) + "px";
+        embedAskBtn.style.left = (window.scrollX + left) + "px";
+      }
+
+      document.addEventListener("mouseup", function () {
+        setTimeout(function () {
+          const text = getSelText();
+          if (text.length > 0) {
+            lastSelectedText = text;
+            const sel = window.getSelection();
+            const range = sel.getRangeAt(0);
+            const rect = range.getBoundingClientRect();
+            // Show first so offsetWidth/offsetHeight are valid for clamping.
+            embedAskBtn.style.visibility = "hidden";
+            embedAskBtn.style.display = "block";
+            placeAskBtn(rect);
+            embedAskBtn.style.visibility = "";
+          } else {
+            embedAskBtn.style.display = "none";
+          }
+        }, 10);
+      });
+
+      document.addEventListener("mousedown", function (e) {
+        if (e.target === embedAskBtn) return;
+        embedAskBtn.style.display = "none";
+      });
+
+      function askParent(text) {
+        try {
+          if (window.parent && window.parent !== window && window.parent.__aiSidebar) {
+            // Pass PDF extract path as context override so parent AI loads full PDF text,
+            // not the outer paper card. This activates backend's PDF reading mode prompt.
+            window.parent.__aiSidebar.openWithSelection(text || "", window.__CONTEXT_PATH__ || "");
+            return true;
+          }
+        } catch (e) { /* cross-origin blocked — fall through */ }
+        return false;
+      }
+
+      embedAskBtn.addEventListener("click", function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        embedAskBtn.style.display = "none";
+        if (!askParent(lastSelectedText)) {
+          alert("AI 助手未就绪：请确认父页面已加载 AI 侧边栏脚本。");
+        }
+      });
+
+      if (aiOpenBtn) {
+        aiOpenBtn.addEventListener("click", function () {
+          askParent("");
+        });
+      }
+    }
+
+    // Kick off
+    load();
+  </script>
+</body>
+</html>
