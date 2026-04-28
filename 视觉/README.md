@@ -32,6 +32,7 @@
 - [3D稀疏卷积](3D视觉/3D稀疏卷积.md) — Hash Map、Rulebook、Implicit GEMM
 - [NeRF详解](3D视觉/NeRF详解.md) — 神经辐射场，体渲染方程，Instant-NGP 加速
 - [高斯溅射专题](3D视觉/高斯溅射/README.md) — 8 篇系列：3DGS 基础、2DGS、4DGS、加速压缩、生成式、物理仿真、SLAM、具身
+- [3D 生成专题](3D视觉/3D生成/README.md) — 结构化潜变量流派 TRELLIS / Hunyuan3D / Direct3D-S2
 - [Point Transformer详解](3D视觉/Point_Transformer详解.md) — PTv1/v2/v3，向量注意力与序列化注意力
 
 ---

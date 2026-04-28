@@ -14,6 +14,9 @@
 - [NeRF详解](NeRF详解.md) — 神经辐射场，隐式 3D 表示与新视角合成，体渲染方程，Instant-NGP 加速
 - [高斯溅射专题](高斯溅射/README.md) — 8 篇系列：3DGS 基础、2DGS 与表面、4DGS、加速压缩、生成式、物理仿真、SLAM、具身
 
+### 3D 生成
+- [3D 生成专题](3D生成/README.md) — 与表示无关的生成方法（结构化潜变量流派）：TRELLIS / Hunyuan3D / Direct3D-S2
+
 ### 深度估计
 <!-- 待添加 -->
 
