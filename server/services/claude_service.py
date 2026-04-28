@@ -11,6 +11,10 @@ from pathlib import Path
 from server.config import CLAUDE_CLI, DOCS_ROOT, MAX_PAGE_CHARS, MAX_PDF_CHARS
 
 logger = logging.getLogger(__name__)
+# Default root level is WARNING; bump so logger.info() actually shows up.
+if not logging.getLogger().handlers:
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(name)s:%(message)s")
+logger.setLevel(logging.INFO)
 
 # 最小化子进程环境变量，只保留必要项，防止泄漏敏感信息
 _env = {
@@ -35,19 +39,20 @@ _ALLOWED_TOOLS = "Read,Edit,Write,Glob,Grep"
 _SYSTEM_PROMPT = (
     "你是一个知识库助手。严格遵守以下规则：\n\n"
     "## 文件访问规则\n"
-    "1. 你只能读取和编辑 Markdown (.md) 文件——但用户随消息上传的图片"
-    "（位于 `.tmp_images/` 目录的 .png/.jpg/.gif/.webp 文件）允许用 Read 工具查看\n"
-    "2. 禁止访问以下内容：\n"
+    "1. 你只能读取和编辑 Markdown (.md) 文件\n"
+    "2. **例外**：当用户消息里给出了 `.tmp_images/` 子目录里的图片绝对路径时，"
+    "你必须用 Read 工具读取那些路径，把图片当作用户输入的一部分。这是用户上传图片的标准入口\n"
+    "3. 禁止访问以下内容：\n"
     "   - .py, .js, .json, .env, .yml, .yaml, .toml, .cfg, .ini, .html, .css 文件\n"
     "   - server/, docs/, .git/, .claude/, .github/ 目录\n"
     "   - 任何包含 config, secret, key, password, token, credential 的文件名\n"
-    "3. 禁止使用绝对路径（如 D:\\, C:\\ 开头的路径）\n"
-    "4. 禁止使用 ../ 访问上级目录\n"
-    "5. 只在当前工作目录及其子目录内操作\n"
-    "6. 禁止创建或修改 CLAUDE.md 文件\n\n"
+    "4. 禁止使用绝对路径（如 D:\\, C:\\ 开头的路径）——**仅 .tmp_images/ 下的图片例外**\n"
+    "5. 禁止使用 ../ 访问上级目录\n"
+    "6. 只在当前工作目录及其子目录内操作\n"
+    "7. 禁止创建或修改 CLAUDE.md 文件\n\n"
     "## 行为规则\n"
-    "7. 只有当用户明确要求修改时，才编辑文件\n"
-    "8. 请用中文回答，使用清晰的 Markdown 格式\n"
+    "8. 只有当用户明确要求修改时，才编辑文件\n"
+    "9. 请用中文回答，使用清晰的 Markdown 格式\n"
 )
 
 # 上传图片落地目录（DOCS_ROOT 下的相对子目录，gitignored）。
@@ -63,17 +68,18 @@ _IMG_EXT = {
 
 
 def _save_temp_images(images: list[dict] | None) -> tuple[list[Path], list[str]]:
-    """把上传图片落到 DOCS_ROOT/.tmp_images/，返回 (绝对路径列表, 相对引用列表)。
+    """把上传图片落到 DOCS_ROOT/.tmp_images/，返回 (绝对路径列表, 给模型用的 posix 字符串列表)。
 
-    数据 URI 文本注入不会让 CLI 真的把内容当图片送给模型——必须落到磁盘
-    再让模型用 Read 工具读，Read 才会以 multimodal block 的形式送给 Claude。
+    数据 URI 文本注入不会让 CLI 真的把内容当图片送给模型——必须落到磁盘，
+    再让模型用 Read 工具读绝对路径（Claude Code 的 Read 强制要求绝对路径），
+    Read 才会以 multimodal block 的形式把图片真正送给 Claude。
     """
     if not images:
         return [], []
     tmp_dir = DOCS_ROOT / _IMG_TMP_DIR
     tmp_dir.mkdir(exist_ok=True)
     abs_paths: list[Path] = []
-    rel_refs: list[str] = []
+    abs_refs: list[str] = []
     for img in images:
         b64 = img.get("base64", "")
         if not b64 or len(b64) > 1_500_000:  # ~1MB binary
@@ -90,23 +96,27 @@ def _save_temp_images(images: list[dict] | None) -> tuple[list[Path], list[str]]
         except OSError:
             continue
         abs_paths.append(abs_path)
-        rel_refs.append(f"{_IMG_TMP_DIR}/{fname}")
-    return abs_paths, rel_refs
+        # posix 形式（正斜杠）—— Read 在 Windows 上两种都接受，但 posix 更不容易被
+        # 当成转义字符踩到坑。
+        abs_refs.append(abs_path.resolve().as_posix())
+    return abs_paths, abs_refs
 
 
 def _build_image_instruction(refs: list[str]) -> str:
     if not refs:
         return ""
     lines = [
-        f"## 用户随本次消息上传的 {len(refs)} 张图片",
+        f"## 用户随本次消息上传了 {len(refs)} 张图片",
         "",
-        "请先用 Read 工具查看以下图片文件，再基于图片内容回答问题：",
+        "**你必须先用 Read 工具读取下面每一个绝对路径**，再回答用户的问题。"
+        "这些是用户输入的一部分，路径已经是 .tmp_images/ 下的临时文件，"
+        "系统提示里已明确允许这种例外：",
         "",
     ]
     for r in refs:
         lines.append(f"- `{r}`")
     lines.append("")
-    lines.append("（这些是临时文件，处理完即可，不需要删除或修改）")
+    lines.append("读完后基于图片内容回答。这些是临时文件，处理完无需删除或修改。")
     lines.append("")
     return "\n".join(lines)
 
@@ -201,6 +211,8 @@ def stream_chat(
     img_abs_paths, img_refs = _save_temp_images(images)
     if img_refs:
         prompt = _build_image_instruction(img_refs) + "\n" + prompt
+        for r in img_refs:
+            logger.info("Image saved for Read: %s", r)
 
     logger.info("Session: %s | Prompt size: %d bytes, images: %d",
                 session_id or "(new)", len(prompt.encode("utf-8")), len(img_refs))
