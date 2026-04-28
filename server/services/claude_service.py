@@ -1,9 +1,13 @@
+import base64
+import binascii
 import json
 import logging
 import os
 import subprocess
 import threading
+import uuid
 from collections.abc import Generator
+from pathlib import Path
 from server.config import CLAUDE_CLI, DOCS_ROOT, MAX_PAGE_CHARS, MAX_PDF_CHARS
 
 logger = logging.getLogger(__name__)
@@ -31,7 +35,8 @@ _ALLOWED_TOOLS = "Read,Edit,Write,Glob,Grep"
 _SYSTEM_PROMPT = (
     "你是一个知识库助手。严格遵守以下规则：\n\n"
     "## 文件访问规则\n"
-    "1. 你只能读取和编辑 Markdown (.md) 文件\n"
+    "1. 你只能读取和编辑 Markdown (.md) 文件——但用户随消息上传的图片"
+    "（位于 `.tmp_images/` 目录的 .png/.jpg/.gif/.webp 文件）允许用 Read 工具查看\n"
     "2. 禁止访问以下内容：\n"
     "   - .py, .js, .json, .env, .yml, .yaml, .toml, .cfg, .ini, .html, .css 文件\n"
     "   - server/, docs/, .git/, .claude/, .github/ 目录\n"
@@ -44,6 +49,66 @@ _SYSTEM_PROMPT = (
     "7. 只有当用户明确要求修改时，才编辑文件\n"
     "8. 请用中文回答，使用清晰的 Markdown 格式\n"
 )
+
+# 上传图片落地目录（DOCS_ROOT 下的相对子目录，gitignored）。
+# 用 .tmp_images/ 是因为系统提示禁止模型用绝对路径，必须给一个相对路径让模型 Read。
+_IMG_TMP_DIR = ".tmp_images"
+_IMG_EXT = {
+    "image/png": "png",
+    "image/jpeg": "jpg",
+    "image/jpg": "jpg",
+    "image/gif": "gif",
+    "image/webp": "webp",
+}
+
+
+def _save_temp_images(images: list[dict] | None) -> tuple[list[Path], list[str]]:
+    """把上传图片落到 DOCS_ROOT/.tmp_images/，返回 (绝对路径列表, 相对引用列表)。
+
+    数据 URI 文本注入不会让 CLI 真的把内容当图片送给模型——必须落到磁盘
+    再让模型用 Read 工具读，Read 才会以 multimodal block 的形式送给 Claude。
+    """
+    if not images:
+        return [], []
+    tmp_dir = DOCS_ROOT / _IMG_TMP_DIR
+    tmp_dir.mkdir(exist_ok=True)
+    abs_paths: list[Path] = []
+    rel_refs: list[str] = []
+    for img in images:
+        b64 = img.get("base64", "")
+        if not b64 or len(b64) > 1_500_000:  # ~1MB binary
+            continue
+        ext = _IMG_EXT.get(img.get("media_type", ""), "png")
+        try:
+            data = base64.b64decode(b64, validate=True)
+        except (ValueError, binascii.Error):
+            continue
+        fname = f"{uuid.uuid4().hex}.{ext}"
+        abs_path = tmp_dir / fname
+        try:
+            abs_path.write_bytes(data)
+        except OSError:
+            continue
+        abs_paths.append(abs_path)
+        rel_refs.append(f"{_IMG_TMP_DIR}/{fname}")
+    return abs_paths, rel_refs
+
+
+def _build_image_instruction(refs: list[str]) -> str:
+    if not refs:
+        return ""
+    lines = [
+        f"## 用户随本次消息上传的 {len(refs)} 张图片",
+        "",
+        "请先用 Read 工具查看以下图片文件，再基于图片内容回答问题：",
+        "",
+    ]
+    for r in refs:
+        lines.append(f"- `{r}`")
+    lines.append("")
+    lines.append("（这些是临时文件，处理完即可，不需要删除或修改）")
+    lines.append("")
+    return "\n".join(lines)
 
 # 子进程超时（秒）
 _CLI_TIMEOUT = 300
@@ -131,22 +196,14 @@ def stream_chat(
         # 新会话：完整 prompt 含页面内容和对话历史
         prompt = build_prompt(page_content, selected_text, messages)
 
-    # 将图片嵌入为 data-URI
-    if images:
-        img_parts = []
-        for img in images:
-            media = img.get("media_type", "image/png")
-            b64 = img.get("base64", "")
-            if not b64:
-                continue
-            if len(b64) > 1_500_000:  # ~1MB limit
-                continue
-            img_parts.append(f"![image](data:{media};base64,{b64})")
-        if img_parts:
-            prompt = "\n".join(img_parts) + "\n\n" + prompt
+    # 把图片落地到 .tmp_images/，再让模型用 Read 工具查看（CLI 才会真把
+    # 图片当 multimodal block 发给 Claude；data-URI 文本注入做不到）。
+    img_abs_paths, img_refs = _save_temp_images(images)
+    if img_refs:
+        prompt = _build_image_instruction(img_refs) + "\n" + prompt
 
     logger.info("Session: %s | Prompt size: %d bytes, images: %d",
-                session_id or "(new)", len(prompt.encode("utf-8")), len(images) if images else 0)
+                session_id or "(new)", len(prompt.encode("utf-8")), len(img_refs))
 
     cmd = [CLAUDE_CLI, "-p", "--verbose", "--output-format", "stream-json"]
     cmd.extend(["--allowedTools", _ALLOWED_TOOLS])
@@ -329,3 +386,9 @@ def stream_chat(
         if proc.poll() is None:
             proc.kill()
             proc.wait(timeout=5)
+        # 清理本次上传的图片临时文件
+        for p in img_abs_paths:
+            try:
+                p.unlink()
+            except OSError:
+                pass

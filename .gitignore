@@ -17,6 +17,9 @@ _backup/
 _cli_sandbox/
 debug_out.txt
 
+# Uploaded-image scratch dir (server writes per-request, cleans up after)
+.tmp_images/
+
 # Claude Code
 .claude/skills/idea-research-skill/
 
