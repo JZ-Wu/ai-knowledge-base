@@ -67,6 +67,11 @@ _IMG_EXT = {
 }
 
 
+# Anthropic 单图 ≤ 5MB binary，base64 大约 +33%；给一个 7MB 的安全上限。
+# 1MB 之前的限制对截图太小（一张高分屏全屏截图就 2-4MB），导致大图被悄悄丢弃。
+_IMG_MAX_B64 = 7_000_000
+
+
 def _save_temp_images(images: list[dict] | None) -> tuple[list[Path], list[str]]:
     """把上传图片落到 DOCS_ROOT/.tmp_images/，返回 (绝对路径列表, 给模型用的 posix 字符串列表)。
 
@@ -75,30 +80,42 @@ def _save_temp_images(images: list[dict] | None) -> tuple[list[Path], list[str]]
     Read 才会以 multimodal block 的形式把图片真正送给 Claude。
     """
     if not images:
+        logger.info("[img] no images in request")
         return [], []
     tmp_dir = DOCS_ROOT / _IMG_TMP_DIR
     tmp_dir.mkdir(exist_ok=True)
     abs_paths: list[Path] = []
     abs_refs: list[str] = []
-    for img in images:
+    logger.info("[img] received %d image(s) from request", len(images))
+    for i, img in enumerate(images):
         b64 = img.get("base64", "")
-        if not b64 or len(b64) > 1_500_000:  # ~1MB binary
+        media = img.get("media_type", "")
+        size = len(b64)
+        if not b64:
+            logger.warning("[img] #%d: empty base64, skipped", i)
             continue
-        ext = _IMG_EXT.get(img.get("media_type", ""), "png")
+        if size > _IMG_MAX_B64:
+            logger.warning("[img] #%d: base64 size %d > %d limit, skipped", i, size, _IMG_MAX_B64)
+            continue
+        ext = _IMG_EXT.get(media, "png")
         try:
             data = base64.b64decode(b64, validate=True)
-        except (ValueError, binascii.Error):
+        except (ValueError, binascii.Error) as e:
+            logger.warning("[img] #%d: base64 decode failed (%s), skipped", i, e)
             continue
         fname = f"{uuid.uuid4().hex}.{ext}"
         abs_path = tmp_dir / fname
         try:
             abs_path.write_bytes(data)
-        except OSError:
+        except OSError as e:
+            logger.warning("[img] #%d: write to %s failed (%s)", i, abs_path, e)
             continue
         abs_paths.append(abs_path)
         # posix 形式（正斜杠）—— Read 在 Windows 上两种都接受，但 posix 更不容易被
         # 当成转义字符踩到坑。
         abs_refs.append(abs_path.resolve().as_posix())
+        logger.info("[img] #%d: saved %s (media=%s, b64_size=%d, bin_size=%d)",
+                    i, abs_path.resolve().as_posix(), media, size, len(data))
     return abs_paths, abs_refs
 
 
