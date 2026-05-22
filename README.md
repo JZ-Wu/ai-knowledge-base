@@ -2,9 +2,7 @@
 
 <div id="kb-stats" class="kb-stats"></div>
 
-一个 Markdown 知识库，但 AI 能直接读和改你的 `.md` 文件。
-
-不是聊天框里返回一段文本让你自己粘回去 —— AI 拿到的工具是 Read / Edit / Write / Glob / Grep（同一套 Claude Code 工具），它会在原位修改你选中的段落，写入磁盘，刷新页面就看到。
+一个 Markdown 知识库。AI 通过 Read / Edit / Write / Glob / Grep 工具直接操作你的 `.md` 文件 —— 在浏览器里选一段文字，对 AI 说几句话，它在原位改完写回磁盘，刷新页面就看到。
 
 <!-- ![demo](docs/assets/demo.gif) -->
 
@@ -52,7 +50,7 @@ AI 会调 Edit / Write 工具替换原文（写之前自动生成 `.bak` 备份�
 
 ### 让 AI 看截图
 
-直接 Ctrl+V 把截图粘到 AI 输入框，或者拖图进去。AI 收到的是真图片，不是 base64 字符串塞 prompt 里 —— 因此能正确理解你画的架构图、表格、错误截图。
+Ctrl+V 把截图粘到 AI 输入框，或者拖图进去。后端把图片落到 `.tmp_images/` 子目录，让 AI 用 Read 工具读，作为 multimodal 输入传给模型，可以问"这张架构图里 attention block 怎么走的"、"这个报错截图哪里出问题"。
 
 ### 读 PDF 时问 AI
 
