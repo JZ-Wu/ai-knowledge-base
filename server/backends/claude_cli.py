@@ -234,7 +234,7 @@ class ClaudeCLIBackend:
         return [
             {
                 "value": p.get("key") or p.get("model"),
-                "label": p.get("name") or p.get("model"),
+                "label": (p.get("name") or "").strip() or (p.get("model") or "").strip() or (p.get("key") or ""),
                 "model": p["model"],
                 "is_default": p.get("key") == default_key,
                 "configured": True,

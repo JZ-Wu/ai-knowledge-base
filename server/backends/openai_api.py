@@ -478,7 +478,7 @@ class OpenAIAPIBackend:
         return [
             {
                 "value": p["key"],
-                "label": p.get("name") or p.get("model"),
+                "label": (p.get("name") or "").strip() or (p.get("model") or "").strip() or p["key"],
                 "model": p.get("model"),
                 "context": p.get("context", 0),
                 "configured": bool((p.get("api_key") or "").strip()),

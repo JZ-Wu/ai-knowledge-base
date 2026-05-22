@@ -117,10 +117,95 @@
     }
   }
 
+  function findModelOption(value) {
+    if (!modelSelect || !value) return null;
+    var options = modelSelect.options || [];
+    for (var i = 0; i < options.length; i++) {
+      if (options[i].value === value || options[i].dataset.model === value) {
+        return options[i];
+      }
+    }
+    return null;
+  }
+
+  function selectModelValue(value) {
+    var opt = findModelOption(value);
+    if (!opt) return false;
+    modelSelect.value = opt.value;
+    return true;
+  }
+
+  function firstNonBlank() {
+    for (var i = 0; i < arguments.length; i++) {
+      var value = arguments[i];
+      if (value === undefined || value === null) continue;
+      value = String(value).trim();
+      if (value) return value;
+    }
+    return "";
+  }
+
   function loadModel() {
     var saved = localStorage.getItem(MODEL_STORAGE_KEY);
     if (saved && modelSelect) {
-      modelSelect.value = saved;
+      selectModelValue(saved);
+    }
+  }
+
+  function renderModelOptions(models) {
+    if (!modelSelect || !models || !models.length) return;
+
+    var saved = localStorage.getItem(MODEL_STORAGE_KEY) || modelSelect.value || "";
+    var defaultValue = "";
+    modelSelect.innerHTML = "";
+
+    models.forEach(function (m) {
+      var value = m.value || m.key || m.model || "";
+      var label = firstNonBlank(m.label, m.name, m.model, value);
+      if (!value || !label) return;
+
+      var opt = document.createElement("option");
+      opt.value = value;
+      opt.textContent = label;
+      if (m.model) opt.dataset.model = m.model;
+      if (m.context || m.ctx) opt.dataset.context = String(m.context || m.ctx);
+      if (m.is_default) defaultValue = value;
+      modelSelect.appendChild(opt);
+    });
+
+    if (!modelSelect.options.length) return;
+    if (saved && selectModelValue(saved)) return;
+    if (defaultValue && selectModelValue(defaultValue)) {
+      saveModel();
+      return;
+    }
+    modelSelect.selectedIndex = 0;
+    saveModel();
+  }
+
+  function updateModelContextFromList(models) {
+    if (!models || !models.length) return;
+    for (var i = 0; i < models.length; i++) {
+      var value = models[i].value || models[i].key || models[i].model || "";
+      var ctx = models[i].context || models[i].ctx || 0;
+      if (value && ctx) MODEL_CONTEXT[value] = ctx;
+      if (models[i].model && ctx) MODEL_CONTEXT[models[i].model] = ctx;
+    }
+  }
+
+  async function loadBackendModels() {
+    if (!modelSelect) return;
+    try {
+      var resp = await fetch("/api/models", { cache: "no-store" });
+      if (!resp.ok) return;
+      var data = await resp.json();
+      var models = data.models || [];
+      if (!models.length) return;
+      renderModelOptions(models);
+      updateModelContextFromList(models);
+      updateContextBar();
+    } catch (err) {
+      console.warn("[ai-sidebar] load models failed:", err);
     }
   }
 
@@ -209,7 +294,12 @@
       return;
     }
     var model = modelSelect ? modelSelect.value : DEFAULT_MODEL;
-    var maxCtx = MODEL_CONTEXT[model] || 200000;
+    var selectedOpt = modelSelect && modelSelect.selectedOptions ? modelSelect.selectedOptions[0] : null;
+    var optionModel = selectedOpt && selectedOpt.dataset ? selectedOpt.dataset.model : "";
+    var optionContext = selectedOpt && selectedOpt.dataset && selectedOpt.dataset.context
+      ? parseInt(selectedOpt.dataset.context, 10)
+      : 0;
+    var maxCtx = optionContext || MODEL_CONTEXT[model] || MODEL_CONTEXT[optionModel] || 200000;
     var pct = (lastContextTokens / maxCtx * 100).toFixed(1);
     var kTokens = (lastContextTokens / 1000).toFixed(1);
     var maxK = (maxCtx / 1000).toFixed(0);
@@ -218,6 +308,8 @@
     var p = parseFloat(pct);
     contextText.style.color = p > 80 ? "#e53935" : p > 60 ? "#f57c00" : "#888";
   }
+
+  loadBackendModels();
 
   // ========== A. Text Selection Detection ==========
 
@@ -574,6 +666,7 @@
       var decoder = new TextDecoder();
       var buffer = "";
       var fullResponse = "";
+      var fullThinking = "";
 
       if (typingEl) { typingEl.remove(); typingEl = null; }
 
@@ -595,6 +688,7 @@
               sessionId = data.session_id;
               saveHistory();
             } else if (data.type === "thinking") {
+              fullThinking += data.content || "";
               var thinkEl = thinkContainer.querySelector(".ai-thinking-block");
               if (!thinkEl) {
                 thinkEl = document.createElement("details");
@@ -603,7 +697,7 @@
                 thinkEl.innerHTML = "<summary>Thinking</summary><pre></pre>";
                 thinkContainer.appendChild(thinkEl);
               }
-              thinkEl.querySelector("pre").textContent = data.content;
+              thinkEl.querySelector("pre").textContent = fullThinking;
               scrollToBottom();
             } else if (data.type === "text") {
               fullResponse += data.content;
