@@ -965,6 +965,6 @@ API 里 `temperature=0` 实际就等于关闭采样、退化为 greedy decoding�
 
 **相关文档**：
 - [MoE详解](MoE详解.md) — FFN 层替换为稀疏专家
-- [对比学习与CLIP详解](../../视觉/对比学习与CLIP详解.md) — ViT 作为视觉编码器
+- [对比学习与CLIP详解](/kb/ai-ml-interview/视觉/表示学习/对比学习与CLIP详解.md) — ViT 作为视觉编码器
 
 [返回上级](README.md) | [返回总目录](../../README.md)

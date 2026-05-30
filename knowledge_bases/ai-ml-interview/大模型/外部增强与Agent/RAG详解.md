@@ -357,6 +357,6 @@ GraphRAG: 构建知识图谱
 - [工具调用与MCP](工具调用与MCP.md) — LLM 如何调用外部工具
 - [Agent框架详解](Agent框架详解.md) — Agent 如何编排 RAG 和工具调用
 - [预训练与后训练](../训练与微调/预训练与后训练.md)
-- [对比学习与CLIP详解](../../视觉/对比学习与CLIP详解.md) — Embedding 的对比学习原理
+- [对比学习与CLIP详解](/kb/ai-ml-interview/视觉/表示学习/对比学习与CLIP详解.md) — Embedding 的对比学习原理
 
 [返回上级](README.md) | [返回总目录](../../README.md)

@@ -35,10 +35,13 @@ const title = (entry.data as any).title || fileTitle;
 const isIndex = entry.id === 'index' || entry.id.endsWith('/index');
 const cleanedId = isIndex ? entry.id.replace(/\/?index$/, '') : entry.id;
 const parts = cleanedId.split('/').filter((p) => p);
+// 路由前缀段 'kb'（/kb/<slug>/... 里的 kb）不是可导航页面，从面包屑里跳过；
+// 但 href 仍用完整路径构造（首个真实 crumb = KB slug → /kb/<slug>/）。
+const skip = parts[0] === 'kb' ? 1 : 0;
 const crumbs = parts.slice(0, -1).map((p, i) => ({
   label: decodeURIComponent(p),
   href: '/' + parts.slice(0, i + 1).join('/') + '/',
-}));
+})).slice(skip);
 const lastCrumb = parts[parts.length - 1] || '总览';
 ---
 

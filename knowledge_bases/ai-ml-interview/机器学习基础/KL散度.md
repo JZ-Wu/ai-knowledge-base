@@ -108,7 +108,7 @@ $$L_{InfoNCE} = -\log \frac{\exp(s(x, x^+) / \tau)}{\exp(s(x, x^+) / \tau) + \su
 | **计算量** | $O(V)$，类别多就崩 | $O(k)$，与负样本数成正比 | $O(k)$，同左 |
 | **典型应用** | 分类、LLM 训练 | Word2Vec | CLIP、SimCLR、MoCo |
 
-> **延伸阅读**：CLIP 中 InfoNCE 的具体使用见 [对比学习与CLIP](../视觉/对比学习与CLIP.md)
+> **延伸阅读**：CLIP 中 InfoNCE 的具体使用见 [对比学习与CLIP](/kb/ai-ml-interview/视觉/表示学习/对比学习与CLIP详解.md)
 
 ## KL 散度：交叉熵减去熵
 
@@ -194,7 +194,7 @@ $$\boxed{\log p(x) \geq \text{ELBO} = \underbrace{\mathbb{E}_{q}[\log p(x|z)]}_{
 
 注意正则项用的是 **Reverse KL**——这对应前面表格里 VAE 那一行，后验"不能编造先验没有的东西"。
 
-> **延伸阅读**：完整的 VAE 推导和 Diffusion 模型的 ELBO 见 [生成模型：VAE与Diffusion](../论文阅读/生成模型/生成模型_VAE与Diffusion.md)
+> **延伸阅读**：完整的 VAE 推导和 Diffusion 模型的 ELBO 见 [生成模型：VAE与Diffusion](/kb/ai-ml-interview/视觉/生成模型/README.md)
 
 ## 全景图：KL 散度如何串联 ML 各领域
 
