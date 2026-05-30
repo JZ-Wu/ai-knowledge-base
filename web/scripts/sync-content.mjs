@@ -103,15 +103,46 @@ function stripFrontmatter(text) {
   return text.slice(after + 1);
 }
 
+// 把相对 URL（相对当前文件所在目录）解析成绝对 /kb/<slug>/... 路径。
+// baseDir 形如 '/kb/ai-ml-interview/大模型/基础理论/'（始终 / 开头 + / 结尾）。
+// 用 URL 段语义处理 . / ..，与操作系统路径分隔符无关。
+function resolveUrl(baseDir, rel) {
+  const stack = baseDir.split('/').filter(Boolean);
+  for (const seg of rel.split('/')) {
+    if (seg === '' || seg === '.') continue;
+    if (seg === '..') { if (stack.length) stack.pop(); }
+    else stack.push(seg);
+  }
+  let out = '/' + stack.join('/');
+  if ((rel === '' || rel.endsWith('/')) && !out.endsWith('/')) out += '/';
+  return out;
+}
+
 // Markdown 链接重写：
-//   [text](foo.md)            → [text](foo/)
-//   [text](foo/README.md)     → [text](foo/)
-//   [text](/x/y/z.md)         → [text](/x/y/z/)
-//   [text](./foo.md#hash)     → [text](./foo/#hash)
-//   [text](foo.png)           保留不动（资产）
+//   [text](foo.md)            → [text](/kb/<slug>/<dir>/foo/)   （相对 → 绝对）
+//   [text](foo/README.md)     → [text](/kb/<slug>/<dir>/foo/)
+//   [text](/x/y/z.md)         → [text](/x/y/z/)                 （已绝对，仅 .md→/）
+//   [text](../bar.md#hash)    → [text](/kb/<slug>/.../bar/#hash)
+//   [text](foo.png)           保留不动（资产，交给 Astro image pipeline）
+//
+// 关键：相对链接锚定**源文件所在目录**（baseUrlDir）解析成绝对路径。
+// Astro trailingSlash:'always' 下页面是"目录式 URL"，浏览器按页面目录解析 ../ 会
+// 比作者按"文件"写时少跳一层而错位；同步时锚定源文件路径产出绝对路径可彻底规避。
 //
 // 还把 <iframe src="docs/tools/pdf-reader.html?..." 改成绝对路径 /docs/tools/...
-function rewriteLinks(text) {
+function rewriteLinks(text, baseUrlDir) {
+  function convert(url) {
+    // README.md → 目录；其他 .md → 去扩展加 /
+    if (/(\/|^)README\.md$/i.test(url)) {
+      url = url.replace(/(\/|^)README\.md$/i, (mm, sep) => sep || '');
+      if (url && !url.endsWith('/')) url += '/';
+    } else {
+      url = url.replace(/\.md$/i, '/');
+    }
+    // 相对链接（不以 / 开头）→ 锚定源文件目录解析成绝对
+    if (baseUrlDir && !url.startsWith('/')) url = resolveUrl(baseUrlDir, url);
+    return url;
+  }
   // markdown links
   text = text.replace(/(\]\()([^)]+?)(\))/g, (m, open, url, close) => {
     // 锚点 / 外部 URL / mailto / 资产 → 不动
@@ -120,14 +151,11 @@ function rewriteLinks(text) {
     let hash = '';
     const hashIdx = url.indexOf('#');
     if (hashIdx >= 0) { hash = url.slice(hashIdx); url = url.slice(0, hashIdx); }
-    // 只处理 .md
-    if (!/\.md$/i.test(url)) return open + url + hash + close;
-    // README.md → 目录
-    if (/(\/|^)README\.md$/i.test(url)) {
-      url = url.replace(/(\/|^)README\.md$/i, (mm, sep) => sep || '');
-      if (url && !url.endsWith('/')) url += '/';
-    } else {
-      url = url.replace(/\.md$/i, '/');
+    if (/\.md$/i.test(url)) return open + convert(url) + hash + close;
+    // 非 .md：相对的目录/无扩展页面链接（如 ../00-foo/、./bar）也锚定解析成绝对；
+    // 带扩展名的资产（.png/.css/.pdf…）保留相对，交给 Astro / 静态目录处理。
+    if (baseUrlDir && !url.startsWith('/') && (/\/$/.test(url) || !/\.[a-z0-9]+$/i.test(url.replace(/\/$/, '')))) {
+      return open + resolveUrl(baseUrlDir, url.endsWith('/') ? url : url + '/') + hash + close;
     }
     return open + url + hash + close;
   });
@@ -136,23 +164,17 @@ function rewriteLinks(text) {
     let hash = '';
     const hashIdx = url.indexOf('#');
     if (hashIdx >= 0) { hash = url.slice(hashIdx); url = url.slice(0, hashIdx); }
-    if (/(\/|^)README\.md$/i.test(url)) {
-      url = url.replace(/(\/|^)README\.md$/i, (mm, sep) => sep || '');
-      if (url && !url.endsWith('/')) url += '/';
-    } else {
-      url = url.replace(/\.md$/i, '/');
-    }
-    return `${attr}="${url}${hash}"`;
+    return `${attr}="${convert(url)}${hash}"`;
   });
   // iframe 相对 src docs/tools/... → 绝对 /docs/tools/...
   text = text.replace(/src="docs\/tools\//g, 'src="/docs/tools/');
   return text;
 }
 
-async function copy(src, dst) {
+async function copy(src, dst, baseUrlDir) {
   await fs.mkdir(dirname(dst), { recursive: true });
   const raw = await fs.readFile(src, 'utf-8');
-  const cleaned = rewriteLinks(stripFrontmatter(raw));
+  const cleaned = rewriteLinks(stripFrontmatter(raw), baseUrlDir);
   await fs.writeFile(dst, cleaned, 'utf-8');
 }
 
@@ -170,16 +192,23 @@ async function syncOne(srcDir, opts = {}) {
   catch { console.log('  skip (not found):', srcDir); return { added: 0, updated: 0, deleted: 0 }; }
 
   const { md: mdFiles, asset: assetFiles } = await walk(srcRoot);
+  // URL 前缀：KB 是 'kb/<slug>'，外部挂载是 prefix（如 'external-reports'）。
+  const urlRoot = opts.dstSubDir || srcDir;
   let added = 0, updated = 0;
   for (const f of mdFiles) {
     let rel = relative(srcRoot, f);
+    // 源文件所在目录（KB 相对，posix 分隔）→ 拼成 baseUrlDir 供相对链接解析。
+    const relPosix = rel.split(sep).join('/');
+    const slashIdx = relPosix.lastIndexOf('/');
+    const dirPart = slashIdx >= 0 ? relPosix.slice(0, slashIdx) : '';
+    const baseUrlDir = '/' + urlRoot + (dirPart ? '/' + dirPart : '') + '/';
     // KB 用 README.md 当目录 landing；Astro CC 跟 index.md 更顺手
     if (rel.endsWith('README.md')) {
       rel = rel.slice(0, -'README.md'.length) + 'index.md';
     }
     const dst = resolve(dstRoot, rel);
     const wasNew = !(await fs.stat(dst).catch(() => null));
-    await copy(f, dst);  // strips frontmatter
+    await copy(f, dst, baseUrlDir);  // strips frontmatter + 相对链接→绝对
     if (wasNew) added++; else updated++;
   }
   for (const f of assetFiles) {
