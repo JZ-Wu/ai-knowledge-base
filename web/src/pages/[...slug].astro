@@ -35,13 +35,23 @@ const title = (entry.data as any).title || fileTitle;
 const isIndex = entry.id === 'index' || entry.id.endsWith('/index');
 const cleanedId = isIndex ? entry.id.replace(/\/?index$/, '') : entry.id;
 const parts = cleanedId.split('/').filter((p) => p);
+// 已存在的页面 URL 集合 —— crumb 只有命中真实页面才做链接（中间目录无 index 时
+// 退化成纯文本），避免链到不存在的目录页 404。
+const _allDocs = await getCollection('docs');
+const existingUrls = new Set<string>();
+for (const e of _allDocs) {
+  let id = e.id;
+  if (id === 'index') id = '';
+  else if (id.endsWith('/index')) id = id.slice(0, -'/index'.length);
+  existingUrls.add('/' + (id ? id + '/' : ''));
+}
 // 路由前缀段 'kb'（/kb/<slug>/... 里的 kb）不是可导航页面，从面包屑里跳过；
 // 但 href 仍用完整路径构造（首个真实 crumb = KB slug → /kb/<slug>/）。
 const skip = parts[0] === 'kb' ? 1 : 0;
-const crumbs = parts.slice(0, -1).map((p, i) => ({
-  label: decodeURIComponent(p),
-  href: '/' + parts.slice(0, i + 1).join('/') + '/',
-})).slice(skip);
+const crumbs = parts.slice(0, -1).map((p, i) => {
+  const href = '/' + parts.slice(0, i + 1).join('/') + '/';
+  return { label: decodeURIComponent(p), href, exists: existingUrls.has(href) };
+}).slice(skip);
 const lastCrumb = parts[parts.length - 1] || '总览';
 ---
 
@@ -51,7 +61,7 @@ const lastCrumb = parts[parts.length - 1] || '总览';
     {crumbs.map((c) => (
       <>
         <span class="sep">›</span>
-        <a href={c.href}>{c.label}</a>
+        {c.exists ? <a href={c.href}>{c.label}</a> : <span>{c.label}</span>}
       </>
     ))}
     {parts.length > 0 && (
