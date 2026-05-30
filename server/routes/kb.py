@@ -1,9 +1,11 @@
-"""多知识库 API + 动态 sidebar + /kb/<slug>/... 静态文件。"""
+"""多知识库 API + 动态 sidebar。
 
-from pathlib import Path
+注：/kb/<slug>/... 静态文件**不再**由本路由处理——交给 main.py 的 StaticFiles
+mount（指向 web/dist/，Astro 静态构建产物）。
+"""
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, field_validator
 
 from server.config import DOCS_ROOT
@@ -103,24 +105,23 @@ async def api_sidebar():
 
 @router.get("/_sidebar.md")
 async def sidebar():
+    """根 sidebar：优先静态 DOCS_ROOT/_sidebar.md，缺失才回退到自动构建。
+
+    设计意图：KB 维护者通常会手写一个简洁的 KB switcher 落地页 sidebar；
+    auto-build 那种"把每个 KB 的每个 md 全列出来"的版本只在没人手写时兜底。
+    """
+    static_sidebar = DOCS_ROOT / "_sidebar.md"
+    if static_sidebar.exists():
+        return PlainTextResponse(
+            static_sidebar.read_text(encoding="utf-8"),
+            media_type="text/markdown",
+        )
     return PlainTextResponse(kb_service.build_sidebar_markdown(), media_type="text/markdown")
 
 
-@router.get("/kb/{slug}/")
-async def serve_kb_root(slug: str):
-    try:
-        return FileResponse(kb_service.resolve_static_file(slug, "README.md"))
-    except FileNotFoundError:
-        raise HTTPException(status_code=404, detail="File not found")
-    except ValueError as exc:
-        raise HTTPException(status_code=403, detail=str(exc))
-
-
-@router.get("/kb/{slug}/{file_path:path}")
-async def serve_kb_file(slug: str, file_path: str):
-    try:
-        return FileResponse(kb_service.resolve_static_file(slug, file_path))
-    except FileNotFoundError:
-        raise HTTPException(status_code=404, detail="File not found")
-    except ValueError as exc:
-        raise HTTPException(status_code=403, detail=str(exc))
+# 注：原 /kb/{slug}/ 和 /kb/{slug}/{file_path:path} 两个 FileResponse 路由
+# （直接返回 knowledge_bases/<slug>/... 下的 raw markdown）已删除。
+# 它们是 Docsify 时代的产物——Docsify 客户端 fetch 原始 .md 自渲染。
+# 现在前端是 Astro 静态构建（web/dist/kb/<slug>/<path>/index.html），
+# 这些路由不应再拦截 URL，必须 fall through 到 main.py 的 StaticFiles。
+# AI 侧边栏读原文用 /api/page-source（独立路由，仍走 knowledge_bases/）。

@@ -17,6 +17,7 @@ class ChatRequest(BaseModel):
     messages: list[ChatMessage]
     model: str = ""  # 空串 = 用 backend 的默认模型
     thinking: bool = False
+    effort: str = ""  # ""/"default" = 不指定；"low"/"medium"/"high"（仅 OpenAI 推理模型生效，Claude CLI 忽略）
     images: list[ImageData] = []
     session_id: str = ""  # 传入则复用 CLI 会话，无需重发历史
 

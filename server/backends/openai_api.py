@@ -205,7 +205,7 @@ def _iter_sse_json(resp: httpx.Response):
             logger.debug("Ignoring non-json SSE payload: %s", data[:200])
 
 
-def _stream_completion(messages, profile, tools):
+def _stream_completion(messages, profile, tools, effort=""):
     cfg = _api_cfg()
     payload: dict[str, Any] = {
         "model": profile["model"],
@@ -213,6 +213,10 @@ def _stream_completion(messages, profile, tools):
         "stream": True,
         "temperature": cfg.get("temperature", 0.2),
     }
+    # reasoning_effort 只对支持的推理模型有意义；用户显式选了才发，避免普通模型报错。
+    # OpenAI 不收 "max"（那是 Claude CLI 的档位），降级到 high；其余直传。
+    if effort and effort != "default":
+        payload["reasoning_effort"] = "high" if effort == "max" else effort
     if tools:
         payload["tools"] = _TOOLS
         payload["tool_choice"] = "auto"
@@ -478,7 +482,7 @@ class OpenAIAPIBackend:
         return [
             {
                 "value": p["key"],
-                "label": (p.get("name") or "").strip() or (p.get("model") or "").strip() or p["key"],
+                "label": p.get("name") or p.get("model"),
                 "model": p.get("model"),
                 "context": p.get("context", 0),
                 "configured": bool((p.get("api_key") or "").strip()),
@@ -506,6 +510,8 @@ class OpenAIAPIBackend:
         messages: list[dict[str, Any]],
         model: str = "",
         thinking: bool = False,
+        effort: str = "",
+        enable_tools: bool = True,
         images: list[dict[str, Any]] | None = None,
         session_id: str = "",
     ) -> Generator[dict[str, Any], None, None]:
@@ -522,7 +528,7 @@ class OpenAIAPIBackend:
         default_kb_slug = default_kb_slug or ""
         prompt = _build_prompt(page_path, page_content, selected_text, messages, thinking)
         api_messages = _make_initial_messages(prompt, images)
-        enable_tools = cfg.get("enable_tools", True)
+        # enable_tools 由调用方（chat.py 读 chat_defaults）传入，不再读 per-backend cfg
         max_rounds = cfg.get("max_tool_rounds", 5)
 
         logger.info(
@@ -536,7 +542,7 @@ class OpenAIAPIBackend:
             reasoning_parts: list[str] = []
 
             try:
-                for event in _stream_completion(api_messages, profile, tools=enable_tools):
+                for event in _stream_completion(api_messages, profile, tools=enable_tools, effort=effort):
                     usage = event.get("usage")
                     if usage:
                         yield {

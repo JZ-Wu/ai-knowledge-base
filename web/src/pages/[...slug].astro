@@ -1,0 +1,64 @@
+---
+import { getCollection, render } from 'astro:content';
+import Base from '../layouts/Base.astro';
+
+export async function getStaticPaths() {
+  const entries = await getCollection('docs');
+  const seen = new Set<string>();
+  const paths: any[] = [];
+  for (const entry of entries) {
+    // entry.id 不带 .md，是相对 src/content/docs/ 的路径。
+    // index.md 已被 glob 转成 "/" slug，需要单独处理（很少见，KB 用 README.md）
+    let slug = entry.id;
+    // index → 目录 landing：slug 去掉末尾的 /index 或 index
+    if (slug === 'index') slug = '';
+    else if (slug.endsWith('/index')) slug = slug.slice(0, -'/index'.length);
+    // 重复 slug 跳过（同目录下 README + 其他无效配对）
+    if (seen.has(slug)) continue;
+    seen.add(slug);
+    paths.push({
+      params: { slug: slug || undefined },
+      props: { entry },
+    });
+  }
+  return paths;
+}
+
+const { entry } = Astro.props;
+const { Content } = await render(entry);
+
+// 标题：第一行 # 标题 / frontmatter / 文件名
+const fileTitle = entry.id.split('/').pop()?.replace(/[-_]/g, ' ');
+const title = (entry.data as any).title || fileTitle;
+
+// breadcrumb
+const isIndex = entry.id === 'index' || entry.id.endsWith('/index');
+const cleanedId = isIndex ? entry.id.replace(/\/?index$/, '') : entry.id;
+const parts = cleanedId.split('/').filter((p) => p);
+const crumbs = parts.slice(0, -1).map((p, i) => ({
+  label: decodeURIComponent(p),
+  href: '/' + parts.slice(0, i + 1).join('/') + '/',
+}));
+const lastCrumb = parts[parts.length - 1] || '总览';
+---
+
+<Base title={title}>
+  <nav class="crumbs">
+    <a href="/">首页</a>
+    {crumbs.map((c) => (
+      <>
+        <span class="sep">›</span>
+        <a href={c.href}>{c.label}</a>
+      </>
+    ))}
+    {parts.length > 0 && (
+      <>
+        <span class="sep">›</span>
+        {lastCrumb}
+      </>
+    )}
+  </nav>
+  <article class="article">
+    <Content />
+  </article>
+</Base>

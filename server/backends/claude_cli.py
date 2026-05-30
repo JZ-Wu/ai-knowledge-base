@@ -234,7 +234,7 @@ class ClaudeCLIBackend:
         return [
             {
                 "value": p.get("key") or p.get("model"),
-                "label": (p.get("name") or "").strip() or (p.get("model") or "").strip() or (p.get("key") or ""),
+                "label": p.get("name") or p.get("model"),
                 "model": p["model"],
                 "is_default": p.get("key") == default_key,
                 "configured": True,
@@ -259,6 +259,8 @@ class ClaudeCLIBackend:
         messages: list[dict[str, Any]],
         model: str = "",
         thinking: bool = False,
+        effort: str = "",  # low/medium/high/max → CLI 的 --effort（思考强度）
+        enable_tools: bool = True,  # 是否允许工具（Read/Edit/Write/Glob/Grep）
         images: list[dict[str, Any]] | None = None,
         session_id: str = "",
     ) -> Generator[dict[str, Any], None, None]:
@@ -293,9 +295,12 @@ class ClaudeCLIBackend:
 
         cli = settings_service.claude_cli_path()
         cmd = [cli, "-p", "--verbose", "--output-format", "stream-json"]
-        cmd.extend(["--allowedTools", _ALLOWED_TOOLS])
+        if enable_tools:
+            cmd.extend(["--allowedTools", _ALLOWED_TOOLS])
         cmd.extend(["--model", model])
         cmd.extend(["--thinking", "enabled" if thinking else "disabled"])
+        if effort in ("low", "medium", "high", "max"):
+            cmd.extend(["--effort", effort])
         if resuming:
             cmd.extend(["--resume", session_id])
         else:
@@ -443,6 +448,8 @@ class ClaudeCLIBackend:
                         messages=messages,
                         model=model,
                         thinking=thinking,
+                        effort=effort,
+                        enable_tools=enable_tools,
                         images=images,
                         session_id="",
                     )

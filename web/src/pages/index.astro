@@ -1,0 +1,198 @@
+---
+import Base from '../layouts/Base.astro';
+import { getCollection } from 'astro:content';
+import { execSync } from 'node:child_process';
+import { resolve } from 'node:path';
+
+// 站名 / tagline 取自各 KB 自己的 root README.md（不写死，框架通用）。
+const _rootReadmeMods = import.meta.glob('../../../README.md', { query: '?raw', import: 'default', eager: true }) as Record<string, string>;
+const _rootReadme: string = (Object.values(_rootReadmeMods)[0] as string) || '';
+const siteName: string =
+  ((_rootReadme.match(/<h1[^>]*>([^<]+)<\/h1>/) || _rootReadme.match(/^#\s+(.+)$/m) || [])[1] || '知识库').trim();
+const siteTagline: string =
+  ((_rootReadme.match(/<p[^>]*class="[^"]*tagline[^"]*"[^>]*>([^<]+)<\/p>/) || [])[1] || '').trim();
+
+// ── build-time 数据（真实计算，不写死）──────────────────────────────
+const REPO = resolve(process.cwd(), '..');
+function git(args: string): string {
+  try {
+    return execSync('git ' + args, { cwd: REPO, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+  } catch {
+    return '';
+  }
+}
+function ago(ts: number): string {
+  if (!ts) return '';
+  const d = (Date.now() - ts) / 86400000;
+  if (d < 1) return '今天';
+  if (d < 2) return '昨天';
+  if (d < 7) return Math.floor(d) + ' 天前';
+  if (d < 30) return Math.floor(d / 7) + ' 周前';
+  if (d < 365) return Math.floor(d / 30) + ' 个月前';
+  return Math.floor(d / 365) + ' 年前';
+}
+
+const all = await getCollection('docs');
+const kbEntries = all.filter((e) => e.id.startsWith('kb/'));
+const byId = new Map(all.map((e) => [e.id, e]));
+const charCount = (s: string) => (s || '').replace(/\s/g, '').length;
+
+// 顶部统计
+const totalDocs = kbEntries.length;
+const totalChars = kbEntries.reduce((a, e) => a + charCount((e as any).body || ''), 0);
+const wan = (totalChars / 10000).toFixed(1).replace(/\.0$/, '') + ' 万';
+const paperCount = kbEntries.filter(
+  (e) => /\/wiki\/papers\/[^/]+$/.test(e.id) && !/\/index$/.test(e.id)
+).length;
+const ideaCount = kbEntries.filter((e) => /\/idea$/.test(e.id)).length;
+const stats = [
+  { num: String(totalDocs), label: '篇文档' },
+  { num: wan, label: '总字数' },
+  { num: String(paperCount), label: '论文卡片' },
+  { num: String(ideaCount), label: '活跃 idea' },
+];
+
+// 专题卡（KB 列表 + 真实篇数 + 最近更新时间）
+const KBS = [
+  { slug: 'surgical-vqla-agent', name: '💉 Surgical VQLA Agent', meta: '主攻方向', unit: '篇',
+    desc: '训练自由的外科 VQLA agent，think-with-image。MICCAI 2027-02 目标。论文卡 + 项目追踪 + 每周汇报。' },
+  { slug: 'interactive-dt', name: '🌐 Interactive DT', meta: '独立专题', unit: '篇',
+    desc: '铰接 / 物理属性 / 场景级三大派系。覆盖 ICLR/CVPR/NeurIPS 2024-2026 种子论文 + 派系划分 + 开放问题。' },
+  { slug: 'idea-research', name: '💡 Idea Research', meta: '多个 idea 并行', unit: '篇',
+    desc: '早期想法工作区 · hier-affordance-seg / real2sim-home-deformable · 通用方法文档（paper-critical-reading 等）。' },
+  { slug: 'methodology', name: '🔬 科研方法论', meta: '方法论实践', unit: '篇',
+    desc: '从 Evaluate Idea 到 Propose Idea —— 怎么挑、怎么调研、怎么反驳自己。' },
+  { slug: 'applications', name: '📝 申请规划', meta: '个人路径', unit: '篇',
+    desc: '博士申请路径、PI 对接、方向决策快照。' },
+  { slug: 'chemistry', name: '🧪 普通化学（2026 春）', meta: '课程笔记', unit: '章',
+    desc: '从量子力学到分子轨道再到配位化合物 —— 零基础白话讲解，期中专题。' },
+];
+
+// 自动发现：knowledge_bases/ 下未在上面 KBS 里列出的 KB → 自动补成卡片
+//（标题取 README 的 # 标题，简介取 README 首段；上面 6 个是定制覆盖，settings 新建的 KB 走这里）。
+function firstPara(body: string): string {
+  for (const ln of (body || '').split('\n')) {
+    const t = ln.trim();
+    if (!t || /^([#>|*`![]|---|-\s|\d+\.)/.test(t)) continue;
+    return t.replace(/[#*`]/g, '').slice(0, 90);
+  }
+  return '';
+}
+const KNOWN = new Set(KBS.map((k) => k.slug));
+const discovered = Array.from(
+  new Set(kbEntries.map((e) => (e.id.match(/^kb\/([^/]+)/) || [])[1]).filter(Boolean) as string[])
+).sort();
+for (const slug of discovered) {
+  if (KNOWN.has(slug)) continue;
+  const idx = byId.get(`kb/${slug}/index`);
+  KBS.push({
+    slug,
+    name: idx ? titleOf(`kb/${slug}/index`) : slug,
+    meta: '',
+    unit: '篇',
+    desc: idx ? firstPara(((idx as any).body) || '') : '',
+  });
+}
+
+const topics = KBS.filter((kb) => discovered.includes(kb.slug)).map((kb) => {
+  const count = kbEntries.filter((e) => e.id === `kb/${kb.slug}/index` || e.id.startsWith(`kb/${kb.slug}/`)).length;
+  const ct = parseInt(git(`log -1 --pretty=format:%ct -- knowledge_bases/${kb.slug}`).trim() || '0', 10);
+  return { ...kb, href: `/kb/${kb.slug}/`, count, updated: ago(ct ? ct * 1000 : 0) };
+});
+
+// 最近更新（git，最多 6 条；失败则为空，区块自动隐藏）
+function fileToId(file: string): string {
+  let r = file.replace(/^knowledge_bases\//, '').replace(/\.md$/i, '');
+  r = r.replace(/(\/|^)README$/i, (_m, s) => (s || '') + 'index');
+  return 'kb/' + r;
+}
+function tagOf(p: string): string {
+  if (/\/wiki\/papers\//.test(p)) return '论文卡片';
+  if (/project-tracker/.test(p)) return '项目追踪';
+  if (/\/weekly-reports\//.test(p)) return '周报';
+  if (/\/external-cs-survey\//.test(p)) return '调研';
+  if (/\/wiki\/concepts\//.test(p)) return '概念综述';
+  if (/\/wiki\/gaps\//.test(p)) return '开放问题';
+  if (/background-report/.test(p)) return '背景报告';
+  if (/\/proposals\//.test(p)) return '提案';
+  if (/\/idea\.md$/.test(p)) return '专题定义';
+  return '文档';
+}
+function titleOf(id: string): string {
+  const e = byId.get(id);
+  if (e) {
+    if ((e.data as any)?.title) return (e.data as any).title;
+    const m = ((e as any).body || '').match(/^#\s+(.+)$/m);
+    if (m) return m[1].replace(/[#*`]/g, '').trim();
+  }
+  const seg = id.replace(/\/index$/, '').split('/').pop() || id;
+  return seg.replace(/[-_]/g, ' ');
+}
+const recent: { tag: string; title: string; href: string; time: string }[] = [];
+{
+  const out = git(`log -n 80 --name-only --pretty=format:@@%ct -- knowledge_bases`);
+  let cur = 0;
+  const seen = new Set<string>();
+  for (const ln of out.split('\n')) {
+    if (ln.startsWith('@@')) { cur = parseInt(ln.slice(2), 10) * 1000; continue; }
+    const f = ln.trim();
+    if (!f.endsWith('.md') || !f.startsWith('knowledge_bases/')) continue;
+    if (/_sidebar\.md$/.test(f) || /(\/|^)README\.md$/i.test(f)) continue;
+    if (seen.has(f)) continue;
+    seen.add(f);
+    const id = fileToId(f);
+    if (!byId.has(id)) continue; // 已删除/未发布的跳过
+    recent.push({ tag: tagOf(f), title: titleOf(id), href: '/' + id.replace(/\/index$/, '') + '/', time: ago(cur) });
+    if (recent.length >= 6) break;
+  }
+}
+---
+
+<Base title={siteName}>
+  <section class="hero" id="hero">
+    <h1>{siteName}</h1>
+    <p class="tagline">{siteTagline}</p>
+    <div class="kb-stats">
+      {stats.map((s) => (
+        <div class="stat-card">
+          <span class="stat-num">{s.num}</span>
+          <div class="stat-label">{s.label}</div>
+        </div>
+      ))}
+    </div>
+  </section>
+
+  <section id="topics">
+    <h2 class="section-title">专题</h2>
+    <div class="topic-grid">
+      {topics.map((t) => (
+        <a class="topic-card" href={t.href}>
+          <div class="topic-name">{t.name}</div>
+          <div class="topic-desc">{t.desc}</div>
+          <div class="topic-meta">
+            <span>{t.count} {t.unit}</span>
+            {t.updated && <span class="dot">·</span>}
+            {t.updated && <span>更新 {t.updated}</span>}
+            <span class="dot">·</span>
+            <span>{t.meta}</span>
+          </div>
+        </a>
+      ))}
+    </div>
+  </section>
+
+  {recent.length > 0 && (
+    <section id="recent">
+      <h2 class="section-title">最近更新</h2>
+      <ul class="recent">
+        {recent.map((r) => (
+          <li>
+            <span class="tag">{r.tag}</span>
+            <a href={r.href}>{r.title}</a>
+            <span class="time">{r.time}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  )}
+</Base>

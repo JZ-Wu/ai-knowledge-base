@@ -1,0 +1,107 @@
+---
+import '../styles/global.css';
+import 'katex/dist/katex.min.css';
+import Topbar from '../components/Topbar.astro';
+import Sidebar from '../components/Sidebar.astro';
+import TOC from '../components/TOC.astro';
+
+export interface Props {
+  title?: string;
+  description?: string;
+}
+
+const {
+  title = '知识库',
+  description = '',
+} = Astro.props;
+---
+
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    {/* FastAPI 后端 base URL —— dev 时 Astro :4321 → 后端 :8001（vite proxy 在 Astro 6 不
+        穿透 catch-all 路由，所以前端直接打绝对 URL，靠 FastAPI 端 CORS 放行）。
+        生产同源时这个变量为空字符串，所有 fetch 退化成相对路径。 */}
+    <script is:inline>
+      (function () {
+        var p = window.location.port;
+        window.__KB_API_BASE = (p === '4321') ? 'http://localhost:8001' : '';
+      })();
+    </script>
+    {/* AI sidebar CSS（从 kb-core/docs vendor 过来，公共脚本路径不变） */}
+    <link rel="stylesheet" href="/docs/css/ai-sidebar.css" />
+    {/* Pre-paint: 设置 data-mode 避免 light/dark flash —— inline 必须在 css 之后 */}
+    <script is:inline>
+      (function () {
+        try {
+          var m = localStorage.getItem('kb_mode');
+          if (m !== 'light' && m !== 'dark') m = 'light';
+          document.documentElement.dataset.mode = m;
+        } catch (e) {
+          document.documentElement.dataset.mode = 'light';
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <Topbar />
+    <div class="progress-bar" id="kb-progress" aria-hidden="true"></div>
+
+    <div class="app">
+      <Sidebar />
+      <main class="main">
+        <slot />
+      </main>
+      <TOC />
+    </div>
+
+    {/* AI sidebar 挂载点 + 引导脚本 —— bootstrapAiSidebar 把 slot 替换成实际 sidebar，
+        并按依赖顺序加载 katex / marked / DOMPurify / ai-sidebar.js（idempotent） */}
+    <div id="ai-sidebar-slot"></div>
+    <script is:inline src="/docs/js/ai-sidebar-mount.js"></script>
+    <script is:inline>
+      bootstrapAiSidebar({ initialQuotaText: "Loading quota..." });
+    </script>
+
+    {/* Source Editor Panel —— editor.js 期望的 DOM 结构 */}
+    <div id="editor-panel" class="editor-panel">
+      <div class="editor-resize" id="editor-resize"></div>
+      <div class="editor-toolbar">
+        <span id="editor-filepath" class="editor-filepath"></span>
+        <div class="editor-toolbar-btns">
+          <button id="editor-save" class="editor-btn editor-btn-save">Save</button>
+          <button id="editor-close" class="editor-btn editor-btn-cancel">Close</button>
+        </div>
+      </div>
+      <div id="editor-container" class="editor-container"></div>
+    </div>
+
+    {/* CodeMirror 5 vendor —— editor.js 启动时需要这些 */}
+    <link rel="stylesheet" href="/docs/vendor/codemirror/codemirror.min.css" />
+    <link rel="stylesheet" href="/docs/vendor/codemirror/one-dark.min.css" />
+    <link rel="stylesheet" href="/docs/vendor/codemirror/dialog.min.css" />
+    <script is:inline src="/docs/vendor/codemirror/codemirror.min.js"></script>
+    <script is:inline src="/docs/vendor/codemirror/markdown.min.js"></script>
+    <script is:inline src="/docs/vendor/codemirror/gfm.min.js"></script>
+    <script is:inline src="/docs/vendor/codemirror/stex.min.js"></script>
+    <script is:inline src="/docs/vendor/codemirror/javascript.min.js"></script>
+    <script is:inline src="/docs/vendor/codemirror/python.min.js"></script>
+    <script is:inline src="/docs/vendor/codemirror/xml.min.js"></script>
+    <script is:inline src="/docs/vendor/codemirror/css.min.js"></script>
+    <script is:inline src="/docs/vendor/codemirror/overlay.min.js"></script>
+    <script is:inline src="/docs/vendor/codemirror/closebrackets.min.js"></script>
+    <script is:inline src="/docs/vendor/codemirror/search.min.js"></script>
+    <script is:inline src="/docs/vendor/codemirror/searchcursor.min.js"></script>
+    <script is:inline src="/docs/vendor/codemirror/dialog.min.js"></script>
+    <script is:inline src="/docs/js/editor.js"></script>
+
+    <script>
+      import '../client.ts';
+    </script>
+  </body>
+</html>

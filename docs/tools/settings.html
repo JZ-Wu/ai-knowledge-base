@@ -43,10 +43,10 @@
   <!-- ===== AI 后端选择 ===== -->
   <section class="card">
     <h2>AI 后端</h2>
-    <p class="hint">Claude CLI 需要本机安装 <code>@anthropic-ai/claude-code</code> 并 <code>claude</code> 登录；OpenAI 兼容 API 任何符合 Chat Completions 协议的服务都可（OpenAI、DeepSeek 等）。</p>
+    <p class="hint">Claude CLI 需要本机安装 <code>@anthropic-ai/claude-code</code> 并 <code>claude</code> 登录；<strong>自定义 API</strong> 填 接口地址 + key + 模型名 即可（DeepSeek / 通义千问 / Kimi / 本地 vLLM·Ollama 等主流 Chat Completions 服务都行）。</p>
     <div class="backend-choice">
       <label><input type="radio" name="backend" value="claude_cli"> Claude CLI（用订阅，免 API key）</label>
-      <label><input type="radio" name="backend" value="openai_api"> OpenAI 兼容 API（填 key）</label>
+      <label><input type="radio" name="backend" value="openai_api"> 自定义 API（填 地址 + key + 模型名）</label>
     </div>
   </section>
 
@@ -64,7 +64,7 @@
   </section>
 
   <section class="card" id="openai-card">
-    <h2>OpenAI 兼容 API 设置</h2>
+    <h2>自定义 API 模型</h2>
     <div id="openai-profiles"></div>
     <div class="action-row">
       <button class="secondary" id="add-profile-btn">+ 添加模型</button>
@@ -78,6 +78,27 @@
     </div>
     <div class="field">
       <label><input type="checkbox" id="openai-allow-client-model"> 允许前端选择模型</label>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>对话默认</h2>
+    <p class="hint">AI 侧栏每次对话仍可临时改，这里设的是初始默认值。</p>
+    <div class="field">
+      <label>默认思考强度</label>
+      <select id="chat-effort">
+        <option value="">关闭</option>
+        <option value="low">低</option>
+        <option value="medium">中</option>
+        <option value="high">高</option>
+        <option value="max">最高</option>
+      </select>
+    </div>
+    <div class="field">
+      <label><input type="checkbox" id="chat-enable-tools"> 默认开启工具（允许 AI 直接编辑知识库 .md）</label>
+    </div>
+    <div class="field">
+      <label><input type="checkbox" id="chat-with-page"> 默认把当前页全文作为上下文喂给 AI</label>
     </div>
   </section>
 

@@ -230,6 +230,12 @@
     $("openai-enable-tools").checked = !!s.openai_api.enable_tools;
     $("openai-allow-client-model").checked = !!s.openai_api.allow_client_model;
 
+    // 对话默认
+    var cd = s.chat_defaults || {};
+    $("chat-effort").value = cd.effort != null ? cd.effort : "max";
+    $("chat-enable-tools").checked = cd.enable_tools !== false;
+    $("chat-with-page").checked = cd.with_page !== false;
+
     // Access password
     $("access-password").value = "";
     $("access-password-state").textContent = s.access_password_set
@@ -343,6 +349,11 @@
         request_timeout: state.settings.openai_api.request_timeout,
         max_tool_rounds: state.settings.openai_api.max_tool_rounds,
         temperature: state.settings.openai_api.temperature,
+      },
+      chat_defaults: {
+        effort: $("chat-effort").value,
+        enable_tools: $("chat-enable-tools").checked,
+        with_page: $("chat-with-page").checked,
       },
     };
   }

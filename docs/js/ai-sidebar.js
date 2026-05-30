@@ -24,7 +24,7 @@
   var sendBtn = document.getElementById("ai-send");
   var floatBtn = document.getElementById("ai-float-btn");
   var modelSelect = document.getElementById("ai-model");
-  var thinkingCheckbox = document.getElementById("ai-thinking");
+  var thinkSelect = document.getElementById("ai-think"); // 思考强度：""=关闭 / low / medium / high / max
   var imageInput = document.getElementById("ai-image-input");
   var imagePreview = document.getElementById("ai-image-preview");
   var pendingImages = []; // [{base64, media_type}]
@@ -117,95 +117,10 @@
     }
   }
 
-  function findModelOption(value) {
-    if (!modelSelect || !value) return null;
-    var options = modelSelect.options || [];
-    for (var i = 0; i < options.length; i++) {
-      if (options[i].value === value || options[i].dataset.model === value) {
-        return options[i];
-      }
-    }
-    return null;
-  }
-
-  function selectModelValue(value) {
-    var opt = findModelOption(value);
-    if (!opt) return false;
-    modelSelect.value = opt.value;
-    return true;
-  }
-
-  function firstNonBlank() {
-    for (var i = 0; i < arguments.length; i++) {
-      var value = arguments[i];
-      if (value === undefined || value === null) continue;
-      value = String(value).trim();
-      if (value) return value;
-    }
-    return "";
-  }
-
   function loadModel() {
     var saved = localStorage.getItem(MODEL_STORAGE_KEY);
     if (saved && modelSelect) {
-      selectModelValue(saved);
-    }
-  }
-
-  function renderModelOptions(models) {
-    if (!modelSelect || !models || !models.length) return;
-
-    var saved = localStorage.getItem(MODEL_STORAGE_KEY) || modelSelect.value || "";
-    var defaultValue = "";
-    modelSelect.innerHTML = "";
-
-    models.forEach(function (m) {
-      var value = m.value || m.key || m.model || "";
-      var label = firstNonBlank(m.label, m.name, m.model, value);
-      if (!value || !label) return;
-
-      var opt = document.createElement("option");
-      opt.value = value;
-      opt.textContent = label;
-      if (m.model) opt.dataset.model = m.model;
-      if (m.context || m.ctx) opt.dataset.context = String(m.context || m.ctx);
-      if (m.is_default) defaultValue = value;
-      modelSelect.appendChild(opt);
-    });
-
-    if (!modelSelect.options.length) return;
-    if (saved && selectModelValue(saved)) return;
-    if (defaultValue && selectModelValue(defaultValue)) {
-      saveModel();
-      return;
-    }
-    modelSelect.selectedIndex = 0;
-    saveModel();
-  }
-
-  function updateModelContextFromList(models) {
-    if (!models || !models.length) return;
-    for (var i = 0; i < models.length; i++) {
-      var value = models[i].value || models[i].key || models[i].model || "";
-      var ctx = models[i].context || models[i].ctx || 0;
-      if (value && ctx) MODEL_CONTEXT[value] = ctx;
-      if (models[i].model && ctx) MODEL_CONTEXT[models[i].model] = ctx;
-    }
-  }
-
-  async function loadBackendModels() {
-    if (!modelSelect) return;
-    try {
-      var resp = await fetch("/api/models", { cache: "no-store" });
-      if (!resp.ok) return;
-      var data = await resp.json();
-      var models = data.models || [];
-      if (!models.length) return;
-      renderModelOptions(models);
-      updateModelContextFromList(models);
-      updateContextBar();
-    } catch (err) {
-      console.warn("[ai-sidebar] load models failed:", err);
+      modelSelect.value = saved;
     }
   }
 
@@ -216,6 +131,16 @@
   // 页面加载时恢复历史和模型选择
   loadHistory();
   loadModel();
+
+  // 思考强度持久化（同 model）
+  var THINK_STORAGE_KEY = "ai_sidebar_think";
+  if (thinkSelect) {
+    var savedThink = localStorage.getItem(THINK_STORAGE_KEY);
+    if (savedThink !== null) thinkSelect.value = savedThink;
+    thinkSelect.addEventListener("change", function () {
+      localStorage.setItem(THINK_STORAGE_KEY, thinkSelect.value);
+    });
+  }
 
   // ========== Quota Display ==========
 
@@ -294,12 +219,7 @@
       return;
     }
     var model = modelSelect ? modelSelect.value : DEFAULT_MODEL;
-    var selectedOpt = modelSelect && modelSelect.selectedOptions ? modelSelect.selectedOptions[0] : null;
-    var optionModel = selectedOpt && selectedOpt.dataset ? selectedOpt.dataset.model : "";
-    var optionContext = selectedOpt && selectedOpt.dataset && selectedOpt.dataset.context
-      ? parseInt(selectedOpt.dataset.context, 10)
-      : 0;
-    var maxCtx = optionContext || MODEL_CONTEXT[model] || MODEL_CONTEXT[optionModel] || 200000;
+    var maxCtx = MODEL_CONTEXT[model] || 200000;
     var pct = (lastContextTokens / maxCtx * 100).toFixed(1);
     var kTokens = (lastContextTokens / 1000).toFixed(1);
     var maxK = (maxCtx / 1000).toFixed(0);
@@ -308,8 +228,6 @@
     var p = parseFloat(pct);
     contextText.style.color = p > 80 ? "#e53935" : p > 60 ? "#f57c00" : "#888";
   }
-
-  loadBackendModels();
 
   // ========== A. Text Selection Detection ==========
 
@@ -505,7 +423,8 @@
         selected_text: selection || "",
         messages: messages,
         model: modelSelect ? modelSelect.value : DEFAULT_MODEL,
-        thinking: thinkingCheckbox ? thinkingCheckbox.checked : false,
+        thinking: !!(thinkSelect && thinkSelect.value),
+        effort: thinkSelect ? thinkSelect.value : "",
         images: images,
         session_id: sid,
       }),
@@ -666,7 +585,6 @@
       var decoder = new TextDecoder();
       var buffer = "";
       var fullResponse = "";
-      var fullThinking = "";
 
       if (typingEl) { typingEl.remove(); typingEl = null; }
 
@@ -688,7 +606,6 @@
               sessionId = data.session_id;
               saveHistory();
             } else if (data.type === "thinking") {
-              fullThinking += data.content || "";
               var thinkEl = thinkContainer.querySelector(".ai-thinking-block");
               if (!thinkEl) {
                 thinkEl = document.createElement("details");
@@ -697,7 +614,7 @@
                 thinkEl.innerHTML = "<summary>Thinking</summary><pre></pre>";
                 thinkContainer.appendChild(thinkEl);
               }
-              thinkEl.querySelector("pre").textContent = fullThinking;
+              thinkEl.querySelector("pre").textContent = data.content;
               scrollToBottom();
             } else if (data.type === "text") {
               fullResponse += data.content;
@@ -932,49 +849,94 @@
 
     // Replace content with textarea
     var textarea = document.createElement("textarea");
+    textarea.className = "ai-msg-edit-textarea";
     textarea.value = originalText;
-    textarea.style.cssText = "width:100%;min-height:60px;border:1px solid rgba(255,255,255,0.3);border-radius:6px;padding:6px;font-size:14px;font-family:inherit;background:rgba(255,255,255,0.15);color:#fff;resize:vertical;box-sizing:border-box;";
+    textarea.rows = 1;
+
+    // Expand wrapper to full sidebar width while editing so the textarea
+    // isn't squeezed into the right-aligned 92%-max bubble.
+    var wrapper = msgEl.closest(".ai-msg-wrapper");
+    if (wrapper) wrapper.classList.add("editing");
 
     // Clear message content but keep structure
     var children = Array.from(msgEl.children);
     children.forEach(function(c) { c.style.display = "none"; });
     msgEl.appendChild(textarea);
-    textarea.focus();
 
-    var hint = document.createElement("div");
-    hint.style.cssText = "font-size:11px;color:rgba(255,255,255,0.5);margin-top:4px;";
-    hint.textContent = "Enter to submit, Escape to cancel";
-    msgEl.appendChild(hint);
+    // Toolbar: hint + Save/Cancel buttons
+    var toolbar = document.createElement("div");
+    toolbar.className = "ai-msg-edit-toolbar";
+    var hint = document.createElement("span");
+    hint.className = "ai-msg-edit-hint";
+    hint.textContent = "⏎ 提交  ·  Shift+⏎ 换行  ·  Esc 取消";
+    var actions = document.createElement("span");
+    actions.className = "ai-msg-edit-actions";
+    var cancelBtn = document.createElement("button");
+    cancelBtn.type = "button";
+    cancelBtn.className = "ai-msg-edit-btn";
+    cancelBtn.textContent = "取消";
+    var saveBtn = document.createElement("button");
+    saveBtn.type = "button";
+    saveBtn.className = "ai-msg-edit-btn primary";
+    saveBtn.textContent = "提交";
+    actions.appendChild(cancelBtn);
+    actions.appendChild(saveBtn);
+    toolbar.appendChild(hint);
+    toolbar.appendChild(actions);
+    msgEl.appendChild(toolbar);
 
+    // Auto-grow: resize textarea to fit content (capped by CSS max-height)
+    function autoGrow() {
+      textarea.style.height = "auto";
+      textarea.style.height = Math.max(textarea.scrollHeight, 84) + "px";
+    }
+    textarea.addEventListener("input", autoGrow);
+    // Initial sizing once attached to DOM (scrollHeight needs layout)
+    requestAnimationFrame(function() {
+      autoGrow();
+      textarea.focus();
+      // Place cursor at end so user can keep typing
+      textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+    });
+
+    function commit() {
+      var newText = textarea.value.trim();
+      if (!newText) return;
+      // Remove this message and all subsequent messages
+      chatMessages = chatMessages.slice(0, msgIndex);
+      var allMsgs = messagesEl.querySelectorAll(".ai-msg");
+      var startRemove = false;
+      Array.from(allMsgs).forEach(function(m) {
+        if (m === msgEl) startRemove = true;
+        if (startRemove) m.remove();
+      });
+      var hints = messagesEl.querySelectorAll(".ai-refresh-hint");
+      hints.forEach(function(h) { h.remove(); });
+      sessionId = "";
+      lastSentPagePath = "";
+      inputEl.value = newText;
+      saveHistory();
+      sendMessage();
+    }
+    function cancel() {
+      textarea.remove();
+      toolbar.remove();
+      if (wrapper) wrapper.classList.remove("editing");
+      children.forEach(function(c) { c.style.display = ""; });
+    }
+
+    saveBtn.addEventListener("click", commit);
+    cancelBtn.addEventListener("click", cancel);
     textarea.addEventListener("keydown", function(e) {
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
-        var newText = textarea.value.trim();
-        if (!newText) return;
-        // Remove this message and all subsequent messages
-        chatMessages = chatMessages.slice(0, msgIndex);
-        // Remove DOM elements from this message onward
-        var allMsgs = messagesEl.querySelectorAll(".ai-msg");
-        var startRemove = false;
-        Array.from(allMsgs).forEach(function(m) {
-          if (m === msgEl) startRemove = true;
-          if (startRemove) m.remove();
-        });
-        // Also remove any refresh hints
-        var hints = messagesEl.querySelectorAll(".ai-refresh-hint");
-        hints.forEach(function(h) { h.remove(); });
-        // Reset session since we're replaying
-        sessionId = "";
-        lastSentPagePath = "";
-        // Re-send with edited text
-        inputEl.value = newText;
-        saveHistory();
-        sendMessage();
+        e.stopPropagation();
+        commit();
       } else if (e.key === "Escape") {
-        // Cancel edit
-        textarea.remove();
-        hint.remove();
-        children.forEach(function(c) { c.style.display = ""; });
+        // stopPropagation: prevent the global Esc handler from closing the sidebar
+        e.preventDefault();
+        e.stopPropagation();
+        cancel();
       }
     });
   }
@@ -1128,9 +1090,13 @@
   // ========== Helpers ==========
 
   function getPagePath() {
+    // Docsify：当前页在 location.hash（#/kb/...）；Astro：在 location.pathname（/kb/.../）。
+    // 取到 kb/<slug>/<rel> 形式（无前后斜杠），后端 split_docsify_path 解析。
     var hash = window.location.hash || "";
-    var path = hash.replace(/^#\/?/, "");
-    path = path.split("?")[0];
+    var path = hash.length > 1
+      ? hash.replace(/^#\/?/, "")
+      : (window.location.pathname || "").replace(/^\/+/, "");
+    path = path.split("?")[0].split("#")[0].replace(/\/+$/, "");
     try { path = decodeURIComponent(path); } catch (_) {}
     return path || "";
   }

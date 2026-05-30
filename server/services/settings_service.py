@@ -45,11 +45,12 @@ def _default_settings() -> dict[str, Any]:
         "claude_cli": {
             "cli_path": detected,  # 空字符串 = 每次调用前重新探测
             "models": [
+                {"key": "opus-4-8",   "name": "Claude Opus 4.8",   "model": "claude-opus-4-8"},
                 {"key": "opus-4-7",   "name": "Claude Opus 4.7",   "model": "claude-opus-4-7"},
                 {"key": "sonnet-4-6", "name": "Claude Sonnet 4.6", "model": "claude-sonnet-4-6"},
                 {"key": "haiku-4-5",  "name": "Claude Haiku 4.5",  "model": "claude-haiku-4-5-20251001"},
             ],
-            "default_model_key": "sonnet-4-6",
+            "default_model_key": "opus-4-8",
             "enable_tools": True,
         },
         "openai_api": {
@@ -70,6 +71,11 @@ def _default_settings() -> dict[str, Any]:
             "request_timeout": 300,
             "max_tool_rounds": 5,
             "temperature": 0.2,
+        },
+        "chat_defaults": {
+            "effort": "max",       # 默认思考强度："" / low / medium / high / max
+            "enable_tools": True,  # 默认允许 AI 编辑 .md（工具调用）
+            "with_page": True,     # 默认把当前页全文作为上下文喂给 AI
         },
     }
 
@@ -187,6 +193,7 @@ def public_view() -> dict[str, Any]:
         "access_password_set": bool((s.get("access_password") or "").strip()),
         "claude_cli": s["claude_cli"],
         "openai_api": openai,
+        "chat_defaults": s.get("chat_defaults", {}),
         "is_configured": is_configured(),
         "claude_cli_available": bool(_detect_claude_cli()),
     }

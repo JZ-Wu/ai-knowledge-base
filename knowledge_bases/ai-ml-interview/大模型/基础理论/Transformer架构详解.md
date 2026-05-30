@@ -166,7 +166,7 @@ Decoder-Only 把 prompt 和生成的内容拼成一个序列，用 causal mask �
 
 ### 3.1 Token Embedding
 
-词表由 [BPE 等 Subword 算法](/大模型/基础理论/Tokenizer详解.md#二bpe-byte-pair-encoding) 构建，详见 [Tokenizer详解](/大模型/基础理论/Tokenizer详解.md)。
+词表由 [BPE 等 Subword 算法](/kb/ai-ml-interview/大模型/基础理论/Tokenizer详解.md#二bpe-byte-pair-encoding) 构建，详见 [Tokenizer详解](/kb/ai-ml-interview/大模型/基础理论/Tokenizer详解.md)。
 
 ```
 词表 V (如 32000~150000 个 token)

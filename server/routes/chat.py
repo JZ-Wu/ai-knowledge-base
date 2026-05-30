@@ -8,7 +8,7 @@ from fastapi.responses import StreamingResponse
 
 from server.backends import get_active_backend
 from server.models import ChatRequest
-from server.services import kb_service
+from server.services import kb_service, settings_service
 
 router = APIRouter()
 
@@ -23,6 +23,12 @@ async def chat(request: ChatRequest):
     except ValueError as e:
         raise HTTPException(status_code=403, detail=str(e))
 
+    # 对话默认（设置页可配）：是否带页面全文 / 是否允许工具
+    cd = settings_service.read().get("chat_defaults", {})
+    if not cd.get("with_page", True):
+        page_content = ""
+    enable_tools = bool(cd.get("enable_tools", True))
+
     messages = [{"role": m.role, "content": m.content} for m in request.messages]
     images = [{"base64": img.base64, "media_type": img.media_type} for img in request.images]
     backend = get_active_backend()
@@ -36,6 +42,8 @@ async def chat(request: ChatRequest):
                 messages=messages,
                 model=request.model,
                 thinking=request.thinking,
+                effort=request.effort,
+                enable_tools=enable_tools,
                 images=images,
                 session_id=request.session_id,
             ):

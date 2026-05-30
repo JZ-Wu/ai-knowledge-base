@@ -23,6 +23,7 @@ class SettingsPayload(BaseModel):
     access_password: str = Field(default="")
     claude_cli: dict[str, Any] = Field(default_factory=dict)
     openai_api: dict[str, Any] = Field(default_factory=dict)
+    chat_defaults: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("backend")
     @classmethod

@@ -34,6 +34,23 @@ SYNC_PATHS = [
     "start.sh",
     "start_server.bat",
     "INSTALL.md",
+    "scripts/sync_core.py",  # 同步脚本自身：以后改 SYNC_PATHS 可自动传播到各 KB
+    # ── Astro 前端（只同步源；构建产物 dist/.astro/node_modules/content-docs 各 KB 本地再生）──
+    # 用细粒度 src 子路径，刻意避开生成的 web/src/content/docs。
+    "web/src/components",
+    "web/src/layouts",
+    "web/src/pages",
+    "web/src/styles",
+    "web/src/assets",
+    "web/src/client.ts",
+    "web/src/content.config.ts",
+    "web/scripts",
+    "web/public/scripts",
+    "web/astro.config.mjs",
+    "web/package.json",
+    "web/package-lock.json",
+    "web/tsconfig.json",
+    "web/README.md",
 ]
 
 # 同步时两端都忽略的文件（既不从 kb-core 复制、也不从 KB 端删除）

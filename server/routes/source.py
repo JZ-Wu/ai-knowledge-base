@@ -2,7 +2,6 @@
 
 from fastapi import APIRouter, HTTPException, Query
 
-from server.config import DOCS_ROOT
 from server.services import kb_service
 
 router = APIRouter()
@@ -17,5 +16,6 @@ async def get_page_source(path: str = Query(..., description="Docsify page path"
     except ValueError as e:
         raise HTTPException(status_code=403, detail=str(e))
     content = resolved.abs_path.read_text(encoding="utf-8")
-    rel_path = resolved.abs_path.relative_to(DOCS_ROOT).as_posix()
-    return {"source": content, "file_path": rel_path}
+    # 用 kb_service 已经算好的 rel_path——它正确处理了 DOCS_ROOT 与 EXTERNAL_MOUNTS
+    # 两类来源，直接 relative_to(DOCS_ROOT) 会在外部 mount 路径上抛 ValueError → 500。
+    return {"source": content, "file_path": resolved.rel_path}

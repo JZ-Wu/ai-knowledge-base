@@ -1,0 +1,61 @@
+---
+// 递归侧栏节点 —— Warm·M 视觉 + 可折叠。
+//   group（有 children）→ 可点击的小标题（带 ▸ 箭头）+ 子列表；
+//      默认只展开「当前页所在分支」的祖先，其余收起。
+//   leaf（有 href）     → <a>，按 depth 缩进，当前页高亮。
+import Self from './SidebarItem.astro';
+
+export type Node = {
+  label: string;
+  href?: string;
+  bold?: boolean;
+  children?: Node[];
+};
+
+interface Props {
+  node: Node;
+  depth: number;
+  currentPath: string;
+}
+const { node, depth, currentPath } = Astro.props as Props;
+
+const norm = (h?: string) => (h ? (h.replace(/\/$/, '') || '/') : '');
+const active = !!(node.href && norm(node.href) === currentPath);
+
+function hasActiveDesc(n: Node): boolean {
+  if (!n.children) return false;
+  return n.children.some(
+    (c) => (c.href && norm(c.href) === currentPath) || hasActiveDesc(c)
+  );
+}
+
+const isGroup = !!(node.children && node.children.length);
+const expanded = isGroup && hasActiveDesc(node); // 默认展开当前页分支
+const pad = 10 + depth * 12;
+---
+{isGroup ? (
+  <li class:list={['nav-item', 'nav-group-item', { expanded }]} data-depth={depth}>
+    <button
+      type="button"
+      class="nav-subtitle"
+      style={`padding-left:${pad}px`}
+      aria-expanded={expanded ? 'true' : 'false'}
+    >
+      <span class="chev" aria-hidden="true">▸</span>
+      <span class="lbl">{node.label}</span>
+    </button>
+    <ul class="nav-list">
+      {node.children!.map((c) => (
+        <Self node={c} depth={depth + 1} currentPath={currentPath} />
+      ))}
+    </ul>
+  </li>
+) : (
+  <li class="nav-item">
+    <a
+      href={node.href || '#'}
+      class:list={[{ active }]}
+      style={`padding-left:${pad}px`}
+    >{node.label}</a>
+  </li>
+)}

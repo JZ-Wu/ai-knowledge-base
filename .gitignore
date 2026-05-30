@@ -29,6 +29,17 @@ debug_out.txt
 # Uploaded-image scratch dir (server writes per-request, cleans up after)
 .tmp_images/
 
+# Astro frontend (web/) build artifacts + sync-content.mjs 生成内容（源码追踪，产物忽略）
+web/node_modules/
+web/.astro/
+web/dist/
+web/.vite/
+web/src/content/docs/
+web/public/docs/
+web/public/knowledge_bases/
+web/public/external-reports/
+web/screenshots/
+
 # Claude Code
 .claude/skills/idea-research-skill/
 

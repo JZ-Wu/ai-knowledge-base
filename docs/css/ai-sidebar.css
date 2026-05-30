@@ -132,10 +132,10 @@ body.ai-sidebar-open .content {
   gap: 12px;
 }
 
-/* 跳到底部悬浮按钮 */
+/* 跳到底部悬浮按钮：必须坐在 input 区上方，否则压住 textarea / Send 按钮 */
 .ai-scroll-bottom-btn {
   position: absolute;
-  bottom: 80px;
+  bottom: 178px;
   left: 50%;
   transform: translateX(-50%);
   width: 36px;
@@ -380,9 +380,13 @@ body.ai-sidebar-open .content {
 .ai-model-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  flex-wrap: wrap;
+  gap: 8px;
   margin-bottom: 8px;
 }
+/* 模型选择吃掉剩余空间；effort 紧凑自适应（避免三件套挤成一坨） */
+.ai-model-row #ai-model { flex: 1 1 120px; width: auto; min-width: 110px; }
+.ai-model-row #ai-effort { flex: 0 1 auto; width: auto; }
 
 .ai-thinking-toggle {
   display: flex;
@@ -520,6 +524,94 @@ body.ai-sidebar-open .content {
 }
 
 #ai-edit-btn:hover { background: #ddd; }
+
+/* ---- Inline message edit (click ✎ on a user bubble) ---- */
+/* When editing, expand the wrapper to full sidebar width and remove the
+   right-flush alignment so the textarea has room to breathe. */
+.ai-msg-wrapper.editing {
+  max-width: 100% !important;
+  width: 100%;
+  align-self: stretch !important;
+}
+.ai-msg-wrapper.editing .ai-msg.user {
+  background: rgba(63, 81, 181, 0.92);
+  border-bottom-right-radius: 12px;
+}
+
+.ai-msg-edit-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 84px;
+  max-height: 50vh;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+  font-size: 14px;
+  font-family: inherit;
+  line-height: 1.5;
+  resize: vertical;
+  overflow-y: auto;
+  outline: none;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.ai-msg-edit-textarea:focus {
+  border-color: rgba(255, 255, 255, 0.6);
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.ai-msg-edit-textarea::placeholder {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.ai-msg-edit-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.ai-msg-edit-hint {
+  flex: 1;
+  min-width: 0;
+}
+
+.ai-msg-edit-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.ai-msg-edit-btn {
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.ai-msg-edit-btn:hover {
+  background: rgba(255, 255, 255, 0.22);
+  border-color: rgba(255, 255, 255, 0.6);
+}
+
+.ai-msg-edit-btn.primary {
+  background: rgba(255, 255, 255, 0.85);
+  color: #283593;
+  border-color: transparent;
+}
+
+.ai-msg-edit-btn.primary:hover {
+  background: #fff;
+}
 
 /* ---- Float button ---- */
 .ai-float-btn {
@@ -828,6 +920,24 @@ body.editor-open .content {
     min-width: 44px;
     min-height: 40px;
   }
+
+  /* 编辑提问框：iOS 不自动缩放、起始高度更高 */
+  .ai-msg-edit-textarea {
+    font-size: 16px;
+    min-height: 120px;
+    max-height: 60vh;
+    padding: 12px;
+  }
+  .ai-msg-edit-toolbar {
+    flex-wrap: wrap;
+    font-size: 12px;
+  }
+  .ai-msg-edit-btn {
+    padding: 8px 14px;
+    font-size: 13px;
+    min-height: 36px;
+  }
+
   .ai-model-row { gap: 6px; margin-bottom: 6px; }
   .ai-model-row select {
     padding: 6px 8px;
@@ -836,7 +946,7 @@ body.editor-open .content {
 
   /* 跳到底部按钮位置上移，避免被输入区遮住 */
   .ai-scroll-bottom-btn {
-    bottom: 120px;
+    bottom: 200px;
     width: 40px;
     height: 40px;
     font-size: 20px;

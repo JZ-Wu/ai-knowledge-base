@@ -1,0 +1,10 @@
+---
+// 右侧目录组件。
+// 渲染时占位 + 客户端 JS（global.ts 注入的 buildToc）从 .article 里抓 h2/h3 填充。
+// 这里只输出一个空的 <aside class="toc">，由 client 端动态填内容。
+//
+// 这样的好处：MDX/MD 渲染流和 TOC 解析解耦，不需要在编译期 walk AST。
+// 缺点：第一帧没目录（短闪），可接受。
+---
+
+<aside class="toc" id="kb-toc"></aside>

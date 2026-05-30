@@ -1,0 +1,279 @@
+---
+// Sidebar —— 对齐 docs/preview 的 Warm·M demo：统一扁平分组。
+//
+//   导航            首页
+//   <当前 KB 名>     该 KB 的完整导航（来自其 _sidebar.md，剥掉「首页/切换知识库」样板）
+//   其他知识库       其余 KB 的入口链接
+//
+//   首页（不在任何 KB 下）：导航 + 每个 KB 一组，列出该 KB 的顶层入口。
+//
+// 视觉样式全部来自 global.css（.nav-group / .nav-group-title / .sidebar a / a.sub）。
+// 不再有折叠箭头、不再有「未分类（自动）」自动堆叠。
+
+import SidebarItem from './SidebarItem.astro';
+import type { Node } from './SidebarItem.astro';
+import { getCollection } from 'astro:content';
+
+// root _sidebar.md 可选（缺失 = KB 列表纯自动发现）；用 glob 容错，文件不存在也不报错。
+const _rootSb = import.meta.glob('../../../_sidebar.md', { query: '?raw', import: 'default', eager: true }) as Record<string, string>;
+const rootSidebarMd: string = (Object.values(_rootSb)[0] as string) || '';
+
+// 各 KB 的 _sidebar.md（build-time，按 slug 索引）
+const kbSidebarRaw = import.meta.glob('../../../knowledge_bases/*/_sidebar.md', {
+  query: '?raw',
+  import: 'default',
+  eager: true,
+}) as Record<string, string>;
+const kbSidebars: Record<string, string> = {};
+for (const [path, content] of Object.entries(kbSidebarRaw)) {
+  const m = path.match(/\/knowledge_bases\/([^/]+)\/_sidebar\.md$/);
+  if (m) kbSidebars[m[1]] = content;
+}
+
+function detectKbSlug(pathname: string): string | null {
+  const m = pathname.match(/^\/kb\/([^/]+)/);
+  return m ? m[1] : null;
+}
+
+function normalizeHref(href: string): string {
+  if (!href) return href;
+  if (href.startsWith('http')) return href;
+  let h = href;
+  if (/(\/|^)README\.md$/i.test(h)) {
+    h = h.replace(/(\/|^)README\.md$/i, (_, sep) => sep || '');
+    if (h && !h.endsWith('/')) h += '/';
+  } else if (/\.md$/i.test(h)) {
+    h = h.replace(/\.md$/i, '/');
+  }
+  if (!h) h = '/';
+  return h;
+}
+
+function parseSidebar(text: string): Node[] {
+  type StackEntry = { node: { children?: Node[] }; indent: number };
+  const root: { children: Node[] } = { children: [] };
+  const stack: StackEntry[] = [{ node: root, indent: -1 }];
+
+  for (const rawLine of text.split('\n')) {
+    if (!rawLine.trim()) continue;
+    const m = rawLine.match(/^(\s*)-\s+(.+?)\s*$/);
+    if (!m) continue;
+    const indent = Math.floor(m[1].length / 2);
+    const content = m[2];
+
+    while (stack.length > 1 && stack[stack.length - 1].indent >= indent) stack.pop();
+    const parent = stack[stack.length - 1].node;
+
+    let node: Node;
+    const bold = content.match(/^\*\*(.+)\*\*$/);
+    if (bold) {
+      node = { label: bold[1].trim(), bold: true, children: [] };
+    } else {
+      const link = content.match(/^\[(.+?)\]\((.+?)\)$/);
+      if (link) {
+        node = { label: link[1].trim(), href: normalizeHref(link[2].trim()) };
+      } else {
+        node = { label: content, children: [] };
+      }
+    }
+
+    if (!parent.children) parent.children = [];
+    parent.children.push(node);
+    if (node.children) stack.push({ node, indent });
+  }
+
+  function clean(n: Node) {
+    if (n.children) {
+      if (n.children.length === 0) delete n.children;
+      else n.children.forEach(clean);
+    }
+  }
+  root.children.forEach(clean);
+  return root.children;
+}
+
+// 从根 _sidebar.md 的「知识库列表」分组解析出 KB 列表（保序）。
+function parseKbList(): { slug: string; label: string; href: string }[] {
+  const tree = parseSidebar(rootSidebarMd);
+  const group = tree.find((n) => n.children && /知识库列表|切换知识库/.test(n.label));
+  const links = (group?.children || []).filter((n) => n.href);
+  const out: { slug: string; label: string; href: string }[] = [];
+  for (const n of links) {
+    const m = (n.href || '').match(/^\/kb\/([^/]+)/);
+    if (m) out.push({ slug: m[1], label: n.label, href: n.href! });
+  }
+  return out;
+}
+
+// 剥掉 KB _sidebar.md 的样板（指向 / 的「KB 总览」链接 + 「切换知识库」分组），
+// 并把唯一的「<KB> 专题」外壳分组解开一层，直接返回其内部导航。
+function extractKbNav(text: string): Node[] {
+  const tree = parseSidebar(text);
+  const kept = tree.filter((n) => {
+    if (n.href && normalizeHref(n.href) === '/') return false;
+    if (n.children && /切换知识库|知识库列表/.test(n.label)) return false;
+    return true;
+  });
+  if (kept.length === 1 && kept[0].children) return kept[0].children;
+  return kept;
+}
+
+// ── EXTERNAL_MOUNTS 自动索引 ───────────────────────────────────
+// getCollection 里所有「不在 kb/ 下」的条目 = EXTERNAL_MOUNTS（server/.env）同步进来的
+// 外部目录（如 external-reports/...）。按路径自动建成可折叠侧栏树，无需手维护 _sidebar。
+const allDocs = await getCollection('docs');
+const docById = new Map(allDocs.map((e) => [e.id, e]));
+function entryTitle(id: string): string {
+  const e = docById.get(id);
+  if (e) {
+    if ((e.data as any)?.title) return (e.data as any).title;
+    const m = ((e as any).body || '').match(/^#\s+(.+)$/m);
+    if (m) return m[1].replace(/[#*`]/g, '').trim();
+  }
+  const seg = id.replace(/\/index$/, '').split('/').pop() || id;
+  return seg.replace(/[-_]/g, ' ');
+}
+const extHref = (id: string) => '/' + id.replace(/\/index$/, '') + '/';
+function buildExtTree(prefix: string): Node[] {
+  const ids = allDocs.map((e) => e.id).filter((id) => id === prefix || id.startsWith(prefix + '/'));
+  const root: Node = { label: prefix, children: [] };
+  for (const id of ids) {
+    const rest = id.slice(prefix.length).replace(/^\//, '');
+    const segs = rest ? rest.split('/') : [];
+    let node: Node = root;
+    for (const g of segs.slice(0, -1)) {
+      node.children = node.children || [];
+      let child = node.children.find((c) => c.children && (c as any)._seg === g);
+      if (!child) {
+        child = { label: g.replace(/[-_]/g, ' '), children: [] };
+        (child as any)._seg = g;
+        node.children.push(child);
+      }
+      node = child;
+    }
+    node.children = node.children || [];
+    const last = segs[segs.length - 1] || 'index';
+    if (last === 'index') node.children.unshift({ label: '总览', href: extHref(id) });
+    else node.children.push({ label: entryTitle(id), href: extHref(id) });
+  }
+  return root.children || [];
+}
+const extPrefixes = Array.from(
+  new Set(allDocs.map((e) => e.id.split('/')[0]).filter((p) => p && p !== 'kb'))
+).sort();
+
+// KB 自动发现：root _sidebar.md 的「知识库列表」提供顺序+标签（定制层），
+// 未在其中列出的 slug 自动补在后面（标签取该 KB README 的 # 标题）。
+function discoverKbList(): { slug: string; label: string; href: string }[] {
+  const curated = parseKbList();
+  const known = new Set(curated.map((k) => k.slug));
+  const allSlugs = Array.from(
+    new Set(allDocs.map((e) => (e.id.match(/^kb\/([^/]+)/) || [])[1]).filter(Boolean) as string[])
+  ).sort();
+  const extra = allSlugs
+    .filter((s) => !known.has(s))
+    .map((s) => ({ slug: s, label: entryTitle('kb/' + s + '/index') || s, href: '/kb/' + s + '/' }));
+  return [...curated, ...extra];
+}
+// 某 KB 的导航：有 _sidebar.md → 按它精排；没有 → 按文件夹自动建树（fetch # 标题）。
+function kbNavOf(s: string): Node[] {
+  return kbSidebars[s] ? extractKbNav(kbSidebars[s]) : buildExtTree('kb/' + s);
+}
+
+const currentPath = Astro.url.pathname.replace(/\/$/, '') || '/';
+const slug = detectKbSlug(currentPath);
+const kbList = discoverKbList();
+const labelOf = (s: string) => kbList.find((k) => k.slug === s)?.label || s;
+const topSeg = currentPath.match(/^\/([^/]+)/)?.[1] || '';
+const isHome = currentPath === '/';
+
+type Group = { title: string; items: Node[] };
+const groups: Group[] = [];
+
+groups.push({ title: '导航', items: [{ label: '🏠 首页', href: '/' }] });
+
+if (slug) {
+  groups.push({ title: labelOf(slug), items: kbNavOf(slug) });
+  const others = kbList.filter((k) => k.slug !== slug).map((k) => ({ label: k.label, href: k.href }));
+  if (others.length) groups.push({ title: '其他知识库', items: others });
+} else if (isHome) {
+  // 首页：每个 KB 一组，列出其顶层直达链接（不展开深层论文树）。
+  for (const kb of kbList) {
+    const top = kbNavOf(kb.slug).filter((n) => n.href && !n.children);
+    groups.push({ title: kb.label, items: top.length ? top : [{ label: '总览', href: kb.href }] });
+  }
+} else {
+  // 外部挂载页（或其它非 KB 页）：紧凑的 KB 入口，正文导航靠下面的外部挂载树。
+  groups.push({ title: '知识库', items: kbList.map((k) => ({ label: k.label, href: k.href })) });
+}
+
+// 外部挂载自动索引：只在「非 KB 页」（首页 / 外部挂载页本身）显示。
+// KB 页用各自 _sidebar.md（某些 KB 如 surgical 在里面手维护了外部引用 + ⚠️ 标注），
+// 这里不再追加，避免同一批外部链接重复出现两次。
+if (!slug) {
+  for (const prefix of extPrefixes) {
+    const items = buildExtTree(prefix);
+    if (items.length) groups.push({ title: prefix, items });
+  }
+}
+void topSeg;
+---
+
+<aside class="sidebar">
+  <input class="search" type="search" placeholder="搜索..." aria-label="搜索" />
+  <nav>
+    {groups.map((g) => (
+      <div class="nav-group">
+        <div class="nav-group-title">{g.title}</div>
+        <ul class="nav-list">
+          {g.items.map((node) => (
+            <SidebarItem node={node} depth={0} currentPath={currentPath} />
+          ))}
+        </ul>
+      </div>
+    ))}
+  </nav>
+</aside>
+
+<style is:global>
+  .sidebar nav { padding-bottom: 24px; }
+  .sidebar .nav-list { list-style: none; margin: 0; padding: 0; }
+  .sidebar .nav-item { position: relative; }
+
+  /* 可折叠的组小标题（如「论文卡片」「A. 铰接」）——整行可点 */
+  .sidebar .nav-subtitle {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    width: 100%;
+    box-sizing: border-box;
+    background: none;
+    border: 0;
+    cursor: pointer;
+    text-align: left;
+    font: inherit;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--fg-muted);
+    padding: 5px 10px;
+    border-radius: var(--r-sm);
+    transition: color 0.12s, background 0.12s;
+  }
+  .sidebar .nav-subtitle:hover { color: var(--fg); background: var(--bg-soft); }
+  .sidebar .nav-subtitle .lbl { flex: 1; min-width: 0; }
+  .sidebar .nav-subtitle .chev {
+    flex-shrink: 0;
+    width: 11px;
+    font-size: 9px;
+    color: var(--fg-dim);
+    transition: transform 0.16s ease;
+  }
+  .sidebar .nav-group-item.expanded > .nav-subtitle .chev { transform: rotate(90deg); }
+  .sidebar .nav-group-item:not(.expanded) > .nav-list { display: none; }
+
+  /* 嵌套层级用一条淡淡的左引导线 */
+  .sidebar .nav-list .nav-list {
+    margin-left: 15px;
+    border-left: 1px solid var(--border);
+  }
+</style>

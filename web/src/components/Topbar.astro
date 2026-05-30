@@ -1,0 +1,161 @@
+---
+// 顶栏：知识库切换下拉（当前库 + 篇数 + 切库 + 管理/设置入口）+ 🌙 / Edit / ✦ AI
+// KB 列表自动发现（getCollection），顺序+标签取自 root _sidebar.md「知识库列表」，
+// 未列出的自动补（标签取该 KB README 的 # 标题）。
+import { getCollection } from 'astro:content';
+
+// root _sidebar.md 可选（缺失 = KB 列表纯自动发现）；用 glob 容错，文件不存在也不报错。
+const _rootSb = import.meta.glob('../../../_sidebar.md', { query: '?raw', import: 'default', eager: true }) as Record<string, string>;
+const rootSidebarMd: string = (Object.values(_rootSb)[0] as string) || '';
+// 站名取自 root README（首页按钮 fallback 用）。
+const _rootRm = import.meta.glob('../../../README.md', { query: '?raw', import: 'default', eager: true }) as Record<string, string>;
+const _rm: string = (Object.values(_rootRm)[0] as string) || '';
+const siteName: string = ((_rm.match(/<h1[^>]*>([^<]+)<\/h1>/) || _rm.match(/^#\s+(.+)$/m) || [])[1] || '知识库').trim();
+
+const all = await getCollection('docs');
+const byId = new Map(all.map((e) => [e.id, e]));
+
+const counts: Record<string, number> = {};
+for (const e of all) {
+  const m = e.id.match(/^kb\/([^/]+)/);
+  if (m) counts[m[1]] = (counts[m[1]] || 0) + 1;
+}
+
+function titleOf(id: string): string {
+  const e = byId.get(id);
+  if (e) {
+    if ((e.data as any)?.title) return (e.data as any).title;
+    const mm = ((e as any).body || '').match(/^#\s+(.+)$/m);
+    if (mm) return mm[1].replace(/[#*`]/g, '').trim();
+  }
+  return id.replace(/^kb\//, '').replace(/\/index$/, '');
+}
+
+// root _sidebar.md 的「知识库列表」分组 → 顺序 + 带 emoji 的标签（定制层）
+function parseCurated(): { slug: string; label: string }[] {
+  const out: { slug: string; label: string }[] = [];
+  let inList = false;
+  for (const raw of rootSidebarMd.split('\n')) {
+    const line = raw.trim();
+    if (/^-\s+\*\*.*(知识库列表|切换知识库).*\*\*/.test(line)) { inList = true; continue; }
+    if (!inList) continue;
+    const m = line.match(/^-\s+\[(.+?)\]\(\/kb\/([^/]+)\//);
+    if (m) out.push({ label: m[1].trim(), slug: m[2] });
+    else if (line.startsWith('- **') || line === '---') break;
+  }
+  return out;
+}
+
+const curated = parseCurated();
+const known = new Set(curated.map((k) => k.slug));
+const extra = Object.keys(counts)
+  .filter((s) => !known.has(s))
+  .sort()
+  .map((s) => ({ slug: s, label: titleOf('kb/' + s + '/index') }));
+const kbs = [...curated, ...extra].map((k) => ({
+  ...k,
+  href: '/kb/' + k.slug + '/',
+  count: counts[k.slug] || 0,
+}));
+
+const curSlug = (Astro.url.pathname.match(/^\/kb\/([^/]+)/) || [])[1] || '';
+const curKb = kbs.find((k) => k.slug === curSlug);
+const btnLabel = curKb ? curKb.label : siteName;
+---
+
+<header class="topbar">
+  <div class="kb-switch">
+    <button class="kb-switch-btn" id="kb-switch-btn" type="button" aria-haspopup="true" aria-expanded="false">
+      <span class="kb-switch-name">{btnLabel}</span>
+      <span class="kb-switch-caret" aria-hidden="true">▾</span>
+    </button>
+    <div class="kb-switch-menu" id="kb-switch-menu" hidden>
+      <a class="kb-switch-item kb-switch-home" href="/">🏠 KB 总览</a>
+      <div class="kb-switch-sep"></div>
+      {kbs.map((k) => (
+        <a class:list={['kb-switch-item', { active: k.slug === curSlug }]} href={k.href}>
+          <span class="kb-switch-item-name">{k.label}</span>
+          <span class="kb-switch-item-count">{k.count} 篇</span>
+        </a>
+      ))}
+      <div class="kb-switch-sep"></div>
+      <a class="kb-switch-item kb-switch-manage" href="/docs/tools/settings.html">⚙ 管理知识库 / 后端设置</a>
+    </div>
+  </div>
+  <span class="spacer"></span>
+  <button class="mode-btn" id="mode-toggle" title="切换深色 (Ctrl+Shift+L)" aria-label="切换深色">🌙</button>
+  <button class="top-action" id="edit-btn" title="编辑源 (Ctrl+Shift+E)">Edit<span class="kbd">⇧E</span></button>
+  <button class="top-action primary" id="ai-open-btn" title="AI 助手 (Ctrl+Shift+A)">✦ AI<span class="kbd">⇧A</span></button>
+</header>
+
+<style>
+  .kb-switch { position: relative; }
+  .kb-switch-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    border: 1px solid var(--border);
+    border-radius: var(--r-sm);
+    font: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    padding: 6px 12px;
+    cursor: pointer;
+    transition: background 0.12s;
+  }
+  .kb-switch-btn:hover { background: var(--bg-soft); }
+  .kb-switch-caret { font-size: 10px; color: var(--fg-dim); }
+
+  .kb-switch-menu {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    min-width: 280px;
+    background: var(--bg-elev);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--r-lg);
+    box-shadow: var(--shadow-md);
+    padding: 6px;
+    z-index: 60;
+  }
+  .kb-switch-menu[hidden] { display: none; }
+
+  .kb-switch-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 12px;
+    border-radius: var(--r-sm);
+    color: var(--fg);
+    text-decoration: none;
+    font-size: 14px;
+    line-height: 1.4;
+  }
+  .kb-switch-item:hover { background: var(--bg-soft); }
+  .kb-switch-item.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+  .kb-switch-item-count { font-size: 12px; color: var(--fg-dim); flex-shrink: 0; }
+  .kb-switch-home { color: var(--fg-muted); }
+  .kb-switch-sep { height: 1px; background: var(--border); margin: 5px 4px; }
+  .kb-switch-manage { color: var(--accent); }
+</style>
+
+<script is:inline>
+  (function () {
+    var btn = document.getElementById('kb-switch-btn');
+    var menu = document.getElementById('kb-switch-menu');
+    if (!btn || !menu) return;
+    function close() { menu.hidden = true; btn.setAttribute('aria-expanded', 'false'); }
+    btn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      if (menu.hidden) { menu.hidden = false; btn.setAttribute('aria-expanded', 'true'); }
+      else { close(); }
+    });
+    document.addEventListener('click', function (e) {
+      if (!menu.hidden && !menu.contains(e.target) && e.target !== btn) close();
+    });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape') close(); });
+  })();
+</script>

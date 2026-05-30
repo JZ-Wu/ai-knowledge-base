@@ -1,0 +1,18 @@
+import puppeteer from 'puppeteer';
+const errors = [];
+const browser = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox'] });
+const page = await browser.newPage();
+page.on('pageerror', (e) => errors.push('ERR ' + e.message));
+page.on('dialog', async (d) => { console.log('  alert:', d.message()); await d.accept(); });
+await page.setViewport({ width: 1440, height: 900 });
+console.log('→ Open artgs paper card');
+await page.goto('http://localhost:4321/idea-research/ideas/interactive-dt/wiki/papers/artgs/', { waitUntil: 'networkidle0', timeout: 30000 });
+await new Promise(r => setTimeout(r, 1000));
+console.log('→ Click Edit');
+await page.click('#edit-btn');
+await new Promise(r => setTimeout(r, 1500));
+const editOpen = await page.evaluate(() => document.getElementById('editor-panel')?.classList.contains('open'));
+const filepath = await page.evaluate(() => document.getElementById('editor-filepath')?.textContent);
+console.log('  editor open:', editOpen, ' filepath:', filepath);
+console.log('errors:', errors.length ? errors : '(none)');
+await browser.close();

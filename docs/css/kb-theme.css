@@ -1,0 +1,752 @@
+/* =============================================================================
+ * kb-theme.css — Warm Material theme for KB Docsify frontend
+ *
+ * 加载顺序：必须在 docs/vendor/css/theme-simple.css 之后。
+ *
+ * 启用方式：在 KB 的 index.html 的 <html> 上加：
+ *   <html data-theme="warm-material" data-mode="light">
+ *
+ * 设计来源：docs/preview/index.html mockup（"★ Warm·M"）。
+ *   - 背景：Academic 米黄
+ *   - 强调色：Material indigo #5C6BC0
+ *   - 圆角：12 / 16
+ *   - 字体：系统 sans，无 web font 依赖（保证在线/离线/中国大陆都一致）
+ *
+ * 黑暗模式：data-mode="dark"，由 docs/js/kb-theme.js 在 <html> 上切换。
+ * ============================================================================= */
+
+/* ---------- base tokens (mode-independent) ---------- */
+[data-theme="warm-material"] {
+  --kb-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", "Helvetica Neue",
+             "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC",
+             "Source Han Sans SC", sans-serif;
+  --kb-mono: "JetBrains Mono", "SF Mono", "Cascadia Code", Menlo, Consolas,
+             "Liberation Mono", "Courier New", monospace;
+  --kb-r: 12px;
+  --kb-r-sm: 8px;
+  --kb-r-lg: 16px;
+  --kb-sidebar-w: 280px;
+  --kb-content-max: 820px;
+  --kb-line: 1.78;
+}
+
+/* ---------- light mode ---------- */
+[data-theme="warm-material"][data-mode="light"] {
+  --kb-bg:           #FAF8F4;
+  --kb-bg-rgb:       250, 248, 244;
+  --kb-bg-elev:      #FFFFFF;
+  --kb-bg-soft:      #F2EEE5;
+  --kb-fg:           #1A1F2C;
+  --kb-fg-muted:     #5A5650;
+  --kb-fg-dim:       #8A8478;
+  --kb-border:       #E5DECE;
+  --kb-border-strong:#C9C0AC;
+  --kb-accent:       #5C6BC0;
+  --kb-accent-hover: #3F51B5;
+  --kb-accent-soft:  #E8EAF6;
+  --kb-code-bg:      #F2EEE5;
+  --kb-code-fg:      #3F51B5;
+  --kb-code-block-bg:#263238;
+  --kb-code-block-fg:#ECEFF1;
+  --kb-shadow-sm:    0 2px 4px rgba(80, 60, 40, 0.05);
+  --kb-shadow-md:    0 6px 20px rgba(80, 60, 40, 0.08);
+  /* keep docsify theme color in sync so its own internals look right */
+  --theme-color:     #5C6BC0;
+}
+
+/* ---------- dark mode ---------- */
+[data-theme="warm-material"][data-mode="dark"] {
+  --kb-bg:           #1C1A16;
+  --kb-bg-rgb:       28, 26, 22;
+  --kb-bg-elev:      #26231D;
+  --kb-bg-soft:      #2E2A22;
+  --kb-fg:           #E8E2D6;
+  --kb-fg-muted:     #A8A090;
+  --kb-fg-dim:       #807868;
+  --kb-border:       #4F4940;
+  --kb-border-strong:#645C50;
+  --kb-accent:       #9FA8DA;
+  --kb-accent-hover: #BDC4E5;
+  --kb-accent-soft:  #2A2840;
+  --kb-code-bg:      #2E2A22;
+  --kb-code-fg:      #BDC4E5;
+  --kb-code-block-bg:#14120F;
+  --kb-code-block-fg:#E8E2D6;
+  --kb-shadow-sm:    0 2px 4px rgba(0, 0, 0, 0.3);
+  --kb-shadow-md:    0 6px 20px rgba(0, 0, 0, 0.4);
+  --theme-color:     #9FA8DA;
+}
+
+/* =============================================================================
+ * Base body + typography
+ * ============================================================================= */
+[data-theme="warm-material"] body {
+  background: var(--kb-bg);
+  color: var(--kb-fg);
+  font-family: var(--kb-sans);
+  font-size: 15px;
+  line-height: var(--kb-line);
+  -webkit-font-smoothing: antialiased;
+  transition: background 0.25s ease, color 0.25s ease;
+}
+
+[data-theme="warm-material"] ::selection {
+  background: var(--kb-accent-soft);
+  color: var(--kb-fg);
+}
+
+/* =============================================================================
+ * Sidebar (left)
+ * ============================================================================= */
+[data-theme="warm-material"] .sidebar {
+  background: var(--kb-bg);
+  border-right: 1px solid var(--kb-border);
+  width: var(--kb-sidebar-w);
+  padding-top: 20px;
+}
+
+[data-theme="warm-material"] .sidebar > h1 {
+  font-family: var(--kb-sans);
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 0 0 12px;
+  padding: 0 20px;
+  color: var(--kb-fg);
+}
+[data-theme="warm-material"] .sidebar > h1 a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* search box */
+[data-theme="warm-material"] .sidebar .search {
+  margin: 0 12px 16px;
+  padding: 0;
+  border: 0;
+}
+[data-theme="warm-material"] .sidebar .search input {
+  width: 100%;
+  padding: 8px 12px 8px 32px;
+  border: 1px solid var(--kb-border-strong);
+  border-radius: var(--kb-r-sm);
+  background: var(--kb-bg-elev);
+  color: var(--kb-fg);
+  font-family: var(--kb-sans);
+  font-size: 13px;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%238A8478' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='11' cy='11' r='8'/><path d='m21 21-4.3-4.3'/></svg>");
+  background-repeat: no-repeat;
+  background-position: 10px center;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+[data-theme="warm-material"] .sidebar .search input:focus {
+  outline: none;
+  border-color: var(--kb-accent);
+  box-shadow: 0 0 0 3px var(--kb-accent-soft);
+}
+[data-theme="warm-material"] .sidebar .search .clear-button {
+  top: 5px;
+}
+
+/* nav */
+[data-theme="warm-material"] .sidebar-nav,
+[data-theme="warm-material"] .sidebar-nav ul {
+  margin: 0;
+  padding: 0 8px;
+  list-style: none;
+}
+[data-theme="warm-material"] .sidebar-nav li {
+  margin: 1px 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+[data-theme="warm-material"] .sidebar-nav li > a {
+  display: block;
+  padding: 5px 12px;
+  color: var(--kb-fg-muted);
+  text-decoration: none;
+  border-radius: var(--kb-r-sm);
+  transition: color 0.12s, background 0.12s;
+}
+[data-theme="warm-material"] .sidebar-nav li > a:hover {
+  color: var(--kb-fg);
+  background: var(--kb-bg-soft);
+}
+[data-theme="warm-material"] .sidebar-nav li.active > a,
+[data-theme="warm-material"] .sidebar-nav li > a.active {
+  color: var(--kb-accent);
+  background: var(--kb-accent-soft);
+  font-weight: 500;
+}
+
+/* sidebar group titles (** markdown bold) */
+[data-theme="warm-material"] .sidebar-nav strong,
+[data-theme="warm-material"] .sidebar-nav li > .kb-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--kb-fg-dim);
+  padding-left: 14px;
+}
+
+/* kb-collapsible (existing custom plugin) */
+[data-theme="warm-material"] .sidebar-nav li.kb-collapsible > .kb-toggle {
+  color: var(--kb-fg-dim);
+}
+[data-theme="warm-material"] .sidebar-nav li.kb-collapsible > .kb-toggle:hover,
+[data-theme="warm-material"] .sidebar-nav li.kb-collapsible > .kb-label:hover,
+[data-theme="warm-material"] .sidebar-nav li.kb-collapsible > strong:hover {
+  color: var(--kb-accent);
+}
+
+/* sub-sidebar (auto-generated for current page headings) */
+[data-theme="warm-material"] .app-sub-sidebar {
+  border-left: 2px solid var(--kb-border);
+  margin-left: 8px;
+  padding-left: 4px;
+}
+[data-theme="warm-material"] .app-sub-sidebar li > a {
+  font-size: 12.5px;
+  color: var(--kb-fg-dim);
+}
+
+/* =============================================================================
+ * Main content area
+ * ============================================================================= */
+[data-theme="warm-material"] .markdown-section {
+  max-width: var(--kb-content-max);
+  padding: 36px 48px 80px;
+  color: var(--kb-fg);
+  font-family: var(--kb-sans);
+  font-size: 15px;
+  line-height: var(--kb-line);
+}
+
+/* headings */
+[data-theme="warm-material"] .markdown-section h1,
+[data-theme="warm-material"] .markdown-section h2,
+[data-theme="warm-material"] .markdown-section h3,
+[data-theme="warm-material"] .markdown-section h4,
+[data-theme="warm-material"] .markdown-section h5,
+[data-theme="warm-material"] .markdown-section h6 {
+  font-family: var(--kb-sans);
+  color: var(--kb-fg);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+[data-theme="warm-material"] .markdown-section h1 {
+  font-size: 32px;
+  margin: 0 0 12px;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+}
+[data-theme="warm-material"] .markdown-section h2 {
+  font-size: 24px;
+  font-weight: 600;
+  margin: 44px 0 14px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--kb-border);
+  line-height: 1.3;
+}
+[data-theme="warm-material"] .markdown-section h3 {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 28px 0 10px;
+}
+[data-theme="warm-material"] .markdown-section h4 {
+  font-size: 15.5px;
+  font-weight: 600;
+  margin: 22px 0 8px;
+  color: var(--kb-fg-muted);
+}
+
+/* paragraphs / links */
+[data-theme="warm-material"] .markdown-section p,
+[data-theme="warm-material"] .markdown-section li {
+  color: var(--kb-fg);
+}
+[data-theme="warm-material"] .markdown-section a {
+  color: var(--kb-accent);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: border-color 0.15s, color 0.15s;
+}
+[data-theme="warm-material"] .markdown-section a:hover {
+  border-bottom-color: var(--kb-accent);
+  color: var(--kb-accent-hover);
+}
+
+/* inline code */
+[data-theme="warm-material"] .markdown-section code {
+  font-family: var(--kb-mono);
+  font-size: 0.88em;
+  background: var(--kb-code-bg);
+  color: var(--kb-code-fg);
+  padding: 1.5px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--kb-border);
+  font-weight: 500;
+}
+
+/* code blocks */
+[data-theme="warm-material"] .markdown-section pre {
+  background: var(--kb-code-block-bg);
+  border: 1px solid var(--kb-border);
+  border-radius: var(--kb-r);
+  padding: 14px 16px;
+  margin: 20px 0;
+  overflow-x: auto;
+  position: relative;
+  box-shadow: var(--kb-shadow-sm);
+}
+[data-theme="warm-material"] .markdown-section pre[data-lang]::before {
+  content: attr(data-lang);
+  position: absolute;
+  top: 6px; right: 12px;
+  font-family: var(--kb-mono);
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.45);
+  text-transform: lowercase;
+  letter-spacing: 0.04em;
+}
+[data-theme="warm-material"] .markdown-section pre > code,
+[data-theme="warm-material"] .markdown-section pre code[class*="lang-"] {
+  font-family: var(--kb-mono);
+  font-size: 13px;
+  line-height: 1.65;
+  background: transparent;
+  color: var(--kb-code-block-fg);
+  border: 0;
+  padding: 0;
+  display: block;
+  white-space: pre;
+}
+
+/* blockquote */
+[data-theme="warm-material"] .markdown-section blockquote {
+  margin: 20px 0;
+  padding: 12px 18px;
+  border-left: 3px solid var(--kb-accent);
+  background: var(--kb-bg-soft);
+  color: var(--kb-fg-muted);
+  border-radius: 0 var(--kb-r-sm) var(--kb-r-sm) 0;
+}
+[data-theme="warm-material"] .markdown-section blockquote p { margin: 0; }
+
+/* tables */
+[data-theme="warm-material"] .markdown-section table {
+  width: 100%;
+  display: table;
+  border-collapse: collapse;
+  margin: 20px 0;
+  font-size: 13.5px;
+  background: var(--kb-bg-elev);
+  border: 1px solid var(--kb-border);
+  border-radius: var(--kb-r-sm);
+  overflow: hidden;
+  box-shadow: var(--kb-shadow-sm);
+}
+[data-theme="warm-material"] .markdown-section th {
+  background: var(--kb-bg-soft);
+  color: var(--kb-fg);
+  font-weight: 600;
+  text-align: left;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--kb-border);
+}
+[data-theme="warm-material"] .markdown-section td {
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--kb-border);
+  color: var(--kb-fg);
+}
+[data-theme="warm-material"] .markdown-section tr:last-child td { border-bottom: 0; }
+
+/* lists */
+[data-theme="warm-material"] .markdown-section ul,
+[data-theme="warm-material"] .markdown-section ol {
+  padding-left: 24px;
+}
+[data-theme="warm-material"] .markdown-section li + li { margin-top: 4px; }
+
+/* horizontal rule */
+[data-theme="warm-material"] .markdown-section hr {
+  border: 0;
+  border-top: 1px solid var(--kb-border);
+  margin: 36px 0;
+}
+
+/* images */
+[data-theme="warm-material"] .markdown-section img {
+  border-radius: var(--kb-r-sm);
+  box-shadow: var(--kb-shadow-sm);
+  max-width: 100%;
+}
+
+/* =============================================================================
+ * Homepage components — hero, topic grid, recent updates
+ * (这些类名供 KB 自己在 README.md 里用 raw HTML 调用)
+ * ============================================================================= */
+[data-theme="warm-material"] .markdown-section .kb-hero {
+  margin: 8px 0 28px;
+}
+[data-theme="warm-material"] .markdown-section .kb-hero h1 {
+  font-size: 38px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin: 0 0 10px;
+  line-height: 1.15;
+}
+[data-theme="warm-material"] .markdown-section .kb-tagline {
+  font-size: 17px;
+  color: var(--kb-fg-muted);
+  margin: 0;
+  max-width: 600px;
+  line-height: 1.55;
+}
+
+[data-theme="warm-material"] .markdown-section .kb-section-title {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--kb-fg-dim);
+  margin: 36px 0 14px;
+  padding: 0;
+  border: 0;
+}
+
+/* topic card grid (homepage main feature) */
+[data-theme="warm-material"] .markdown-section .kb-topic-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 14px;
+  margin: 0 0 8px;
+}
+@media (max-width: 768px) {
+  [data-theme="warm-material"] .markdown-section .kb-topic-grid {
+    grid-template-columns: 1fr;
+  }
+}
+[data-theme="warm-material"] .markdown-section .kb-topic-card {
+  display: block;
+  padding: 18px 20px;
+  background: var(--kb-bg-elev);
+  border: 1px solid var(--kb-border);
+  border-radius: var(--kb-r);
+  color: var(--kb-fg);
+  text-decoration: none;
+  box-shadow: var(--kb-shadow-sm);
+  transition: all 0.18s;
+  border-bottom: 1px solid var(--kb-border);
+}
+[data-theme="warm-material"] .markdown-section .kb-topic-card:hover {
+  border-color: var(--kb-accent);
+  box-shadow: var(--kb-shadow-md);
+  transform: translateY(-2px);
+  color: var(--kb-fg);
+}
+[data-theme="warm-material"] .markdown-section .kb-topic-card .kb-topic-name {
+  font-size: 15.5px;
+  font-weight: 600;
+  margin: 0 0 5px;
+  color: var(--kb-fg);
+}
+[data-theme="warm-material"] .markdown-section .kb-topic-card .kb-topic-desc {
+  font-size: 13.5px;
+  color: var(--kb-fg-muted);
+  line-height: 1.55;
+  margin: 0 0 10px;
+}
+[data-theme="warm-material"] .markdown-section .kb-topic-card .kb-topic-meta {
+  font-size: 12px;
+  color: var(--kb-fg-dim);
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+[data-theme="warm-material"] .markdown-section .kb-topic-card .kb-topic-meta .dot {
+  opacity: 0.5;
+}
+
+/* recent updates list */
+[data-theme="warm-material"] .markdown-section .kb-recent {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  border-top: 1px solid var(--kb-border);
+}
+[data-theme="warm-material"] .markdown-section .kb-recent li {
+  padding: 11px 4px;
+  border-bottom: 1px solid var(--kb-border);
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin: 0;
+}
+[data-theme="warm-material"] .markdown-section .kb-recent li a {
+  color: var(--kb-fg);
+  text-decoration: none;
+  font-size: 14.5px;
+  flex: 1;
+  border: 0;
+}
+[data-theme="warm-material"] .markdown-section .kb-recent li a:hover {
+  color: var(--kb-accent);
+  border: 0;
+}
+[data-theme="warm-material"] .markdown-section .kb-recent li .tag {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--kb-accent-soft);
+  color: var(--kb-accent);
+  font-weight: 500;
+  flex-shrink: 0;
+}
+[data-theme="warm-material"] .markdown-section .kb-recent li .time {
+  font-size: 12px;
+  color: var(--kb-fg-dim);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+/* =============================================================================
+ * KB-specific existing components (theme-aware)
+ * ============================================================================= */
+
+/* stat cards on homepage — override inline flex/horizontal layout to vertical stack */
+[data-theme="warm-material"] .kb-stats {
+  display: flex;
+  gap: 12px;
+  margin: 16px 0 28px;
+  flex-wrap: wrap;
+}
+[data-theme="warm-material"] .kb-stats .stat-card {
+  display: block;
+  flex: 1;
+  min-width: 130px;
+  padding: 14px 18px;
+  border-radius: var(--kb-r);
+  background: var(--kb-bg-elev);
+  border: 1px solid var(--kb-border);
+  box-shadow: var(--kb-shadow-sm);
+  color: var(--kb-fg-muted);
+  font-size: 13px;
+  line-height: 1.4;
+  transition: box-shadow 0.2s, transform 0.2s;
+}
+[data-theme="warm-material"] .kb-stats .stat-card:hover {
+  box-shadow: var(--kb-shadow-md);
+  transform: translateY(-1px);
+}
+[data-theme="warm-material"] .kb-stats .stat-card .stat-num {
+  display: block;
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--kb-accent);
+  line-height: 1.1;
+  margin-bottom: 2px;
+}
+
+/* page stats bar */
+[data-theme="warm-material"] .page-stats-bar {
+  font-size: 12.5px;
+  color: var(--kb-fg-dim);
+  padding: 4px 0 14px;
+  border-bottom: 1px solid var(--kb-border);
+  margin-bottom: 20px;
+}
+
+/* PDF embed wrap — keep functional, just border + bg theme-aware */
+[data-theme="warm-material"] .markdown-section .pdf-embed-wrap {
+  border: 1px solid var(--kb-border);
+  border-radius: var(--kb-r);
+  background: #525659;  /* PDF viewer chrome always dark — keep */
+}
+
+/* =============================================================================
+ * Top-right action buttons (Edit / AI / mode toggle)
+ * ============================================================================= */
+[data-theme="warm-material"] .top-right-btns {
+  position: fixed;
+  top: 14px;
+  right: 18px;
+  z-index: 50;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+[data-theme="warm-material"] .top-btn {
+  border: 1px solid var(--kb-border-strong);
+  background: var(--kb-bg-elev);
+  color: var(--kb-fg-muted);
+  font-family: var(--kb-sans);
+  font-size: 12.5px;
+  font-weight: 500;
+  padding: 7px 13px;
+  border-radius: var(--kb-r-sm);
+  cursor: pointer;
+  transition: all 0.15s;
+  box-shadow: var(--kb-shadow-sm);
+}
+[data-theme="warm-material"] .top-btn:hover {
+  border-color: var(--kb-accent);
+  color: var(--kb-accent);
+}
+[data-theme="warm-material"] .top-btn.ai-btn {
+  background: var(--kb-accent);
+  color: #FFFFFF;
+  border-color: var(--kb-accent);
+}
+[data-theme="warm-material"] .top-btn.ai-btn:hover {
+  background: var(--kb-accent-hover);
+  border-color: var(--kb-accent-hover);
+  color: #FFFFFF;
+}
+
+/* mode toggle (added by kb-theme.js) */
+[data-theme="warm-material"] .kb-mode-btn {
+  width: 34px; height: 34px;
+  padding: 0;
+  border: 1px solid var(--kb-border-strong);
+  background: var(--kb-bg-elev);
+  color: var(--kb-fg-muted);
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  line-height: 1;
+  transition: all 0.18s;
+  box-shadow: var(--kb-shadow-sm);
+}
+[data-theme="warm-material"] .kb-mode-btn:hover {
+  border-color: var(--kb-accent);
+  color: var(--kb-accent);
+  transform: rotate(-15deg);
+}
+
+/* =============================================================================
+ * Reading progress bar (added by kb-theme.js)
+ * ============================================================================= */
+[data-theme="warm-material"] .kb-progress {
+  position: fixed;
+  top: 0; left: 0;
+  height: 2px;
+  width: 0;
+  background: var(--kb-accent);
+  z-index: 200;
+  transition: width 0.08s linear;
+  pointer-events: none;
+}
+
+/* =============================================================================
+ * Right-side TOC (added by kb-theme.js)
+ * ============================================================================= */
+[data-theme="warm-material"] .kb-toc {
+  position: fixed;
+  top: 32px; right: 24px;
+  width: 220px;
+  max-height: calc(100vh - 80px);
+  overflow-y: auto;
+  padding: 16px 0 16px 16px;
+  border-left: 1px solid var(--kb-border);
+  z-index: 30;
+}
+[data-theme="warm-material"] .kb-toc-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--kb-fg-dim);
+  margin-bottom: 10px;
+  padding-left: 10px;
+}
+[data-theme="warm-material"] .kb-toc a {
+  display: block;
+  font-size: 12.5px;
+  padding: 3px 10px;
+  color: var(--kb-fg-muted);
+  text-decoration: none;
+  border-left: 2px solid transparent;
+  margin-bottom: 1px;
+  line-height: 1.5;
+  transition: all 0.12s;
+}
+[data-theme="warm-material"] .kb-toc a:hover { color: var(--kb-fg); }
+[data-theme="warm-material"] .kb-toc a.active {
+  color: var(--kb-accent);
+  border-left-color: var(--kb-accent);
+  font-weight: 500;
+}
+[data-theme="warm-material"] .kb-toc a.h3 {
+  padding-left: 24px;
+  font-size: 12px;
+  color: var(--kb-fg-dim);
+}
+
+/* hide TOC on small screens or when AI / editor open */
+@media (max-width: 1280px) {
+  [data-theme="warm-material"] .kb-toc { display: none; }
+}
+[data-theme="warm-material"] body.ai-sidebar-open .kb-toc,
+[data-theme="warm-material"] body.editor-open .kb-toc {
+  display: none;
+}
+
+/* =============================================================================
+ * Code block copy button (added by kb-theme.js)
+ * ============================================================================= */
+[data-theme="warm-material"] .markdown-section pre .kb-copy-btn {
+  position: absolute;
+  top: 8px; right: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.7);
+  font-family: var(--kb-sans);
+  font-size: 11px;
+  font-weight: 500;
+  padding: 3px 9px;
+  border-radius: 5px;
+  cursor: pointer;
+  opacity: 0;
+  transition: all 0.15s;
+}
+[data-theme="warm-material"] .markdown-section pre:hover .kb-copy-btn { opacity: 1; }
+[data-theme="warm-material"] .markdown-section pre .kb-copy-btn:hover {
+  background: rgba(255, 255, 255, 0.10);
+  color: #FFFFFF;
+}
+
+/* =============================================================================
+ * AI sidebar & editor panel — re-skin existing components with theme tokens
+ * (file lives at docs/css/ai-sidebar.css; we override key colors here)
+ * ============================================================================= */
+[data-theme="warm-material"] .ai-sidebar {
+  background: var(--kb-bg-elev);
+  border-left: 1px solid var(--kb-border);
+  color: var(--kb-fg);
+}
+[data-theme="warm-material"] .ai-sidebar-resize:hover,
+[data-theme="warm-material"] .ai-sidebar-resize.dragging {
+  background: var(--kb-accent-soft);
+}
+
+/* =============================================================================
+ * Mobile
+ * ============================================================================= */
+@media (max-width: 768px) {
+  [data-theme="warm-material"] .markdown-section {
+    padding: 24px 16px 60px;
+  }
+  [data-theme="warm-material"] .markdown-section h1 { font-size: 26px; }
+  [data-theme="warm-material"] .markdown-section h2 { font-size: 20px; }
+  [data-theme="warm-material"] .markdown-section h3 { font-size: 16px; }
+  [data-theme="warm-material"] .top-right-btns {
+    top: 10px; right: 10px; gap: 6px;
+  }
+  [data-theme="warm-material"] .top-btn { padding: 5px 10px; font-size: 12px; }
+  [data-theme="warm-material"] .kb-progress { height: 3px; }
+}

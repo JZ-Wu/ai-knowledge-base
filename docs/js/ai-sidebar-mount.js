@@ -8,12 +8,12 @@
   // Adding a new model? Add ONE entry here. ai-sidebar.js, index.html, and
   // pdf-reader.html all pick it up automatically.
   var MODELS = [
+    { value: "claude-opus-4-8",           label: "Opus 4.8",   ctx: 1000000 },
     { value: "claude-opus-4-7",           label: "Opus 4.7",   ctx: 1000000 },
-    { value: "claude-opus-4-6",           label: "Opus 4.6",   ctx: 1000000 },
     { value: "claude-sonnet-4-6",         label: "Sonnet 4.6", ctx: 200000  },
     { value: "claude-haiku-4-5-20251001", label: "Haiku 4.5",  ctx: 200000  },
   ];
-  var DEFAULT_MODEL = "claude-opus-4-7";
+  var DEFAULT_MODEL = "claude-opus-4-8";
 
   window.AI_SIDEBAR_MODELS = MODELS;
   window.AI_SIDEBAR_DEFAULT_MODEL = DEFAULT_MODEL;
@@ -34,6 +34,46 @@
       return '<option value="' + escapeAttr(m.value) + '"' + sel + '>' +
         escapeAttr(m.label) + "</option>";
     }).join("");
+  }
+
+  // ========== Models from /api/settings（取代硬编码，内置 MODELS 仅作离线兜底）==========
+  function _ctxFor(p) {
+    if (p.context) return p.context;
+    return /opus/i.test(p.model || "") ? 1000000 : 200000;
+  }
+  function applyServerModels(settings) {
+    if (!settings) return;
+    // 思考强度默认值来自设置页 chat_defaults.effort（用户在 ai-sidebar.js 里改过则那边覆盖）
+    var cd = settings.chat_defaults || {};
+    if (cd.effort !== undefined) {
+      var think = document.getElementById("ai-think");
+      if (think) think.value = cd.effort;
+    }
+    var cfg = settings.backend === "openai_api" ? settings.openai_api : settings.claude_cli;
+    var profiles = (cfg && cfg.models) || [];
+    if (!profiles.length) return;
+    MODELS = profiles.map(function (p) {
+      return { value: p.model, label: p.name || p.model, ctx: _ctxFor(p) };
+    });
+    window.AI_SIDEBAR_MODELS = MODELS;
+    var defProfile = profiles.filter(function (p) { return p.key === cfg.default_model_key; })[0] || profiles[0];
+    if (defProfile) {
+      DEFAULT_MODEL = defProfile.model;
+      window.AI_SIDEBAR_DEFAULT_MODEL = DEFAULT_MODEL;
+    }
+    var sel = document.getElementById("ai-model");
+    if (sel) {
+      var prev = sel.value;
+      sel.innerHTML = buildOptionsHtml(DEFAULT_MODEL);
+      if (prev && MODELS.some(function (m) { return m.value === prev; })) sel.value = prev;
+    }
+  }
+  function fetchServerModels() {
+    var base = window.__KB_API_BASE || "";
+    return fetch(base + "/api/settings", { credentials: "include" })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (s) { applyServerModels(s); })
+      .catch(function () { /* 离线/未登录 → 用内置 MODELS 兜底 */ });
   }
 
   // mountAiSidebar — replace the slot element with the AI sidebar markup.
@@ -72,9 +112,13 @@
         '<div class="ai-sidebar-input">' +
           '<div class="ai-model-row">' +
             '<select id="ai-model">' + buildOptionsHtml(defaultModel) + '</select>' +
-            '<label class="ai-thinking-toggle">' +
-              '<input type="checkbox" id="ai-thinking" checked> Thinking' +
-            '</label>' +
+            '<select id="ai-think" title="思考强度：Claude 走 --effort，OpenAI 推理模型走 reasoning_effort">' +
+              '<option value="">思考：关闭</option>' +
+              '<option value="low">思考：低</option>' +
+              '<option value="medium" selected>思考：中</option>' +
+              '<option value="high">思考：高</option>' +
+              '<option value="max">思考：最高</option>' +
+            '</select>' +
           '</div>' +
           '<div id="ai-usage-bar" style="font-size:11px;color:#999;margin-bottom:4px;display:none;"></div>' +
           '<div id="ai-quote-chip" class="ai-quote-chip" style="display:none"></div>' +
@@ -149,7 +193,7 @@
     },
     {
       type: "js",
-      src: "/docs/js/ai-sidebar.js?v=12",
+      src: "/docs/js/ai-sidebar.js?v=13",
       check: function () { return !!window.__aiSidebarLoaded; },
     },
   ];
@@ -186,9 +230,13 @@
   // already loaded by the host page (e.g. docsify-katex) are skipped.
   function bootstrapAiSidebar(opts) {
     mountAiSidebar(opts);
-    return DEPS.reduce(function (p, dep) {
-      return p.then(function () { return loadOne(dep); });
-    }, Promise.resolve()).catch(function (err) {
+    // 先用 /api/settings 的模型列表覆盖下拉（在加载 ai-sidebar.js 之前，
+    // 这样它初始化时读到的 window.AI_SIDEBAR_MODELS 已是最新）。
+    return fetchServerModels().then(function () {
+      return DEPS.reduce(function (p, dep) {
+        return p.then(function () { return loadOne(dep); });
+      }, Promise.resolve());
+    }).catch(function (err) {
       console.error("[ai-sidebar bootstrap]", err);
     });
   }
