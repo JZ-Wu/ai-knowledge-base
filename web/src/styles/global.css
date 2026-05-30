@@ -366,6 +366,20 @@ body {
   padding: 0;
 }
 
+/* Shiki 双主题（astro.config shikiConfig defaultColor:false）：Shiki 只在 token
+   span 上写 --shiki-light / --shiki-dark（及 -bg）变量、不写 color，需在这里按
+   data-mode 解析成实际 color / background-color，否则代码块单色。 */
+:root[data-mode="light"] .astro-code,
+:root[data-mode="light"] .astro-code span {
+  color: var(--shiki-light);
+  background-color: var(--shiki-light-bg);
+}
+:root[data-mode="dark"] .astro-code,
+:root[data-mode="dark"] .astro-code span {
+  color: var(--shiki-dark);
+  background-color: var(--shiki-dark-bg);
+}
+
 /* .code-block — 包装 pre，提供 lang 标签 + 复制按钮 头部条 */
 .article .code-block {
   margin: 20px 0;

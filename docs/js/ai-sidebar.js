@@ -3,6 +3,11 @@
 
   var STORAGE_KEY = "ai_sidebar_history";
 
+  // :4321 dev → http://localhost:8001（跨源）；:8001 同源 → 空串。由 Base.astro 注入。
+  function apiBase() {
+    return (window.__KB_API_BASE) || "";
+  }
+
   // ========== State ==========
   var selectedText = "";
   var currentPagePath = "";
@@ -34,6 +39,7 @@
   var contextBar = document.getElementById("ai-context-bar");
   var contextText = document.getElementById("ai-context-text");
   var lastContextTokens = 0; // 最近一次 input_tokens（近似上下文大小）
+  var sessionUsage = { input: 0, output: 0, cacheRead: 0, total: 0 }; // 整段对话累计 token 用量
   var quoteBtn = document.getElementById("ai-quote-btn");
   var quoteChip = document.getElementById("ai-quote-chip");
 
@@ -101,6 +107,8 @@
     sessionId = "";
     lastSentPagePath = "";
     lastContextTokens = 0;
+    sessionUsage = { input: 0, output: 0, cacheRead: 0, total: 0 };
+    if (usageBar) { usageBar.textContent = ""; usageBar.style.display = "none"; }
     quotedReply = null;
     if (typeof renderQuoteChip === "function") renderQuoteChip();
     updateContextBar();
@@ -160,7 +168,7 @@
   }
 
   function fetchQuota() {
-    fetch("/api/rate-limits")
+    fetch(apiBase() + "/api/rate-limits", { credentials: "include" })
       .then(function(r) { return r.json(); })
       .then(function(data) {
         var rl = data.rate_limits;
@@ -204,13 +212,14 @@
       return m;
     }
     return {
+      "claude-opus-4-8": 1000000,
       "claude-opus-4-7": 1000000,
       "claude-opus-4-6": 1000000,
       "claude-sonnet-4-6": 200000,
       "claude-haiku-4-5-20251001": 200000,
     };
   })();
-  var DEFAULT_MODEL = window.AI_SIDEBAR_DEFAULT_MODEL || "claude-opus-4-7";
+  var DEFAULT_MODEL = window.AI_SIDEBAR_DEFAULT_MODEL || "claude-opus-4-8";
 
   function updateContextBar() {
     if (!contextBar || !contextText) return;
@@ -420,9 +429,10 @@
     // 未设（离线/未取到 settings）默认视为支持（内置兜底模型全是 Claude）。
     var effortVal = (window.AI_SIDEBAR_THINKING_SUPPORTED !== false && thinkSelect)
       ? thinkSelect.value : "";
-    return fetch("/api/chat", {
+    return fetch(apiBase() + "/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      credentials: "include",
       body: JSON.stringify({
         page_path: pagePath,
         selected_text: selection || "",
@@ -619,7 +629,9 @@
                 thinkEl.innerHTML = "<summary>Thinking</summary><pre></pre>";
                 thinkContainer.appendChild(thinkEl);
               }
-              thinkEl.querySelector("pre").textContent = data.content;
+              // append（不是替换）：claude_cli 每个 thinking block、openai 每个 reasoning 增量
+              // 都各发一个 thinking 事件；替换会只剩最后一段，必须累加。
+              thinkEl.querySelector("pre").textContent += data.content;
               scrollToBottom();
             } else if (data.type === "text") {
               fullResponse += data.content;
@@ -651,23 +663,31 @@
               scrollToBottom();
             } else if (data.type === "error") {
               // resume 失败时重置 session，下次自动新建会话
-              if (sessionId && data.content.indexOf("CLI error") !== -1) {
+              var ec = data.content || "";
+              // 收到任何 error 且当前有 session 就重置，下次自动新建会话。
+              // （旧逻辑靠 "CLI error" 子串匹配，但后端实际文案是 "Claude CLI encountered an error"，永不命中。）
+              if (sessionId) {
                 sessionId = "";
                 saveHistory();
               }
-              fullResponse += "\n\n**Error:** " + data.content;
+              fullResponse += "\n\n**Error:** " + ec;
               renderMarkdown(textContainer, fullResponse);
             } else if (data.type === "usage") {
-              // 上下文 ≈ input_tokens + cache_read + cache_create（总发送量）
+              // 上下文 ≈ input_tokens + cache_read + cache_create（最近一轮总发送量）
               lastContextTokens = (data.input_tokens || 0) + (data.cache_read || 0) + (data.cache_create || 0);
               updateContextBar();
+              // 累计整段对话的 token 用量（跨多轮求和）——claude_cli 无账号配额接口，
+              // 所以这里展示对话级累计消耗，作为"用量"展示。
+              sessionUsage.input += (data.input_tokens || 0);
+              sessionUsage.output += (data.output_tokens || 0);
+              sessionUsage.cacheRead += (data.cache_read || 0);
+              sessionUsage.total = sessionUsage.input + sessionUsage.output;
               if (usageBar) {
-                var total = (data.input_tokens || 0) + (data.output_tokens || 0);
                 var parts = [];
-                parts.push("Tokens: " + total.toLocaleString());
-                parts.push("In: " + (data.input_tokens || 0).toLocaleString());
-                parts.push("Out: " + (data.output_tokens || 0).toLocaleString());
-                if (data.cache_read) parts.push("Cache: " + data.cache_read.toLocaleString());
+                parts.push("累计 Tokens: " + sessionUsage.total.toLocaleString());
+                parts.push("In: " + sessionUsage.input.toLocaleString());
+                parts.push("Out: " + sessionUsage.output.toLocaleString());
+                if (sessionUsage.cacheRead) parts.push("Cache: " + sessionUsage.cacheRead.toLocaleString());
                 usageBar.textContent = parts.join(" | ");
                 usageBar.style.display = "block";
               }

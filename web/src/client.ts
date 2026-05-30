@@ -111,15 +111,22 @@ function buildToc() {
 function updateTocActive() {
   const nav = document.getElementById('kb-toc');
   if (!nav) return;
+  // 内容页 scope=.article（h2/h3）；首页 scope=.main（h2.section-title）。
   const article = document.querySelector('.article');
-  if (!article) return;
-  const headings = Array.from(article.querySelectorAll('h2, h3')) as HTMLElement[];
+  const scope = article || document.querySelector('.main');
+  if (!scope) return;
+  const headings = Array.from(
+    scope.querySelectorAll(article ? 'h2, h3' : 'h2.section-title')
+  ) as HTMLElement[];
   if (!headings.length) return;
   const scrollY = window.scrollY + 100;
   let activeIdx = 0;
   headings.forEach((h, i) => { if (h.offsetTop <= scrollY) activeIdx = i; });
   const links = nav.querySelectorAll('a');
-  links.forEach((a, i) => a.classList.toggle('active', i === activeIdx));
+  // 首页 buildToc 在 headings 前多插了一个「首页」锚（links[0]），headings[i] 对应
+  // links[i+1]。内容页则一一对应（offset=0）。宁可少高亮（顶部停在「首页」）也别越界。
+  const offset = article ? 0 : 1;
+  links.forEach((a, i) => a.classList.toggle('active', i === activeIdx + offset));
 }
 
 let tocScrollTicking = false;

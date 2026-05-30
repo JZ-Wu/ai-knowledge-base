@@ -8,7 +8,7 @@ await page.setViewport({ width: 1440, height: 900 });
 const errors = [];
 page.on('pageerror', (e) => errors.push('ERR ' + e.message));
 page.on('requestfailed', (r) => errors.push('FAIL ' + r.url() + ' :: ' + (r.failure()?.errorText || '?')));
-const url = 'http://localhost:4321/docs/tools/pdf-reader.html?pdf=idea-research/ideas/interactive-dt/papers/artgs.pdf&title=ArtGS&embed=1';
+const url = 'http://localhost:4321/docs/tools/pdf-reader.html?pdf=kb/interactive-dt/papers/artgs.pdf&title=ArtGS&embed=1';
 await page.goto(url, { waitUntil: 'networkidle0', timeout: 30000 });
 await new Promise(r => setTimeout(r, 2000));
 await page.screenshot({ path: resolve(__dirname, '..', 'screenshots', 'real', 'pdf-direct.png'), fullPage: false });

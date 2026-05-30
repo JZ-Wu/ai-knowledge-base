@@ -96,11 +96,15 @@ async function walk(dir) {
 
 function stripFrontmatter(text) {
   if (!text.startsWith('---\n') && !text.startsWith('---\r\n')) return text;
-  const end = text.indexOf('\n---', 4);
-  if (end < 0) return text;
-  const after = text.indexOf('\n', end + 4);
-  if (after < 0) return text.slice(end + 4).replace(/^\s+/, '');
-  return text.slice(after + 1);
+  // 按行找闭合：第一行 trim()==='---' 才算结束，避免子串 indexOf('\n---')
+  // 误命中 '\n----'（更长虚线）或 '\n--- 正文' 而提前/错误截断 frontmatter。
+  const lines = text.split('\n');
+  for (let i = 1; i < lines.length; i++) {
+    if (lines[i].trim() === '---') {
+      return lines.slice(i + 1).join('\n');
+    }
+  }
+  return text;  // 无闭合 → 原样返回
 }
 
 // 把相对 URL（相对当前文件所在目录）解析成绝对 /kb/<slug>/... 路径。
@@ -135,7 +139,9 @@ function rewriteLinks(text, baseUrlDir) {
     // README.md → 目录；其他 .md → 去扩展加 /
     if (/(\/|^)README\.md$/i.test(url)) {
       url = url.replace(/(\/|^)README\.md$/i, (mm, sep) => sep || '');
-      if (url && !url.endsWith('/')) url += '/';
+      // 裸 README.md（同目录，无前缀）→ 剥后为空，输出 './' 指当前目录而非空串坏链。
+      if (!url) url = './';
+      else if (!url.endsWith('/')) url += '/';
     } else {
       url = url.replace(/\.md$/i, '/');
     }

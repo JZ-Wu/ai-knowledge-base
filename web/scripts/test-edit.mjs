@@ -6,7 +6,7 @@ page.on('pageerror', (e) => errors.push('ERR ' + e.message));
 page.on('dialog', async (d) => { console.log('  alert:', d.message()); await d.accept(); });
 await page.setViewport({ width: 1440, height: 900 });
 console.log('→ Open artgs paper card');
-await page.goto('http://localhost:4321/idea-research/ideas/interactive-dt/wiki/papers/artgs/', { waitUntil: 'networkidle0', timeout: 30000 });
+await page.goto('http://localhost:4321/kb/interactive-dt/wiki/papers/artgs/', { waitUntil: 'networkidle0', timeout: 30000 });
 await new Promise(r => setTimeout(r, 1000));
 console.log('→ Click Edit');
 await page.click('#edit-btn');

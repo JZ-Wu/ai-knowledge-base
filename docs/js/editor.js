@@ -16,17 +16,23 @@
   var isOpen = false;
   var hasSaved = false;
 
+  function apiBase() {
+    return (typeof window !== "undefined" && window.__KB_API_BASE) || "";
+  }
+
   function getPagePath() {
     var hash = window.location.hash || "";
-    var path = hash.replace(/^#\/?/, "");
-    path = path.split("?")[0];
+    var path = hash.length > 1
+      ? hash.replace(/^#\/?/, "")
+      : (window.location.pathname || "").replace(/^\/+/, "");
+    path = path.split("?")[0].split("#")[0].replace(/\/+$/, "");
     try { path = decodeURIComponent(path); } catch (_) {}
     return path || "";
   }
 
   // 找到当前可视区域对应的标题，在源码中定位
   function findVisibleHeading() {
-    var headings = document.querySelectorAll(".markdown-section h1, .markdown-section h2, .markdown-section h3");
+    var headings = document.querySelectorAll(".markdown-section h1, .markdown-section h2, .markdown-section h3, .article h1, .article h2, .article h3");
     var best = null;
     for (var i = 0; i < headings.length; i++) {
       var rect = headings[i].getBoundingClientRect();
@@ -66,7 +72,7 @@
     var heading = findVisibleHeading();
 
     try {
-      var resp = await fetch("/api/page-source?path=" + encodeURIComponent(pagePath));
+      var resp = await fetch(apiBase() + "/api/page-source?path=" + encodeURIComponent(pagePath), { credentials: "include" });
       if (!resp.ok) throw new Error("Failed to load: " + resp.status);
       var data = await resp.json();
 
@@ -139,8 +145,9 @@
     saveBtn.disabled = true;
 
     try {
-      var resp = await fetch("/api/apply-edit", {
+      var resp = await fetch(apiBase() + "/api/apply-edit", {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           file_path: currentFilePath,

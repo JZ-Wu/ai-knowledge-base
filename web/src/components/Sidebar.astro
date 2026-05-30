@@ -41,7 +41,8 @@ function normalizeHref(href: string): string {
   let h = href;
   if (/(\/|^)README\.md$/i.test(h)) {
     h = h.replace(/(\/|^)README\.md$/i, (_, sep) => sep || '');
-    if (h && !h.endsWith('/')) h += '/';
+    if (!h) h = './'; // 裸 README.md（无路径分隔）→ 当前目录，不要变空串/根
+    else if (!h.endsWith('/')) h += '/';
   } else if (/\.md$/i.test(h)) {
     h = h.replace(/\.md$/i, '/');
   }
@@ -135,7 +136,10 @@ function entryTitle(id: string): string {
 }
 const extHref = (id: string) => '/' + id.replace(/\/index$/, '') + '/';
 function buildExtTree(prefix: string): Node[] {
-  const ids = allDocs.map((e) => e.id).filter((id) => id === prefix || id.startsWith(prefix + '/'));
+  const ids = allDocs
+    .map((e) => e.id)
+    .filter((id) => id === prefix || id.startsWith(prefix + '/'))
+    .sort();
   const root: Node = { label: prefix, children: [] };
   for (const id of ids) {
     const rest = id.slice(prefix.length).replace(/^\//, '');

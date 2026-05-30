@@ -36,6 +36,8 @@ class Backend(Protocol):
         messages: list[dict[str, Any]],
         model: str = "",
         thinking: bool = False,
+        effort: str = "",
+        enable_tools: bool = True,
         images: list[dict[str, Any]] | None = None,
         session_id: str = "",
     ) -> Generator[dict[str, Any], None, None]:

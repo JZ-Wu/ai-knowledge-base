@@ -23,8 +23,15 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from server.config import DOCS_ROOT, KB_ROOT, MAX_PAGE_CHARS, MAX_PDF_CHARS
-from server.services import kb_service, settings_service
+from server.config import (
+    DOCS_ROOT,
+    KB_ROOT,
+    MAX_PAGE_CHARS,
+    MAX_PDF_CHARS,
+    MAX_PDF_INDEX_CHARS,
+    PDF_RENDER_DPI,
+)
+from server.services import kb_service, pdf_render, settings_service
 
 logger = logging.getLogger(__name__)
 if not logging.getLogger().handlers:
@@ -136,6 +143,14 @@ def _build_image_instruction(refs: list[str]) -> str:
     return "\n".join(lines)
 
 
+def _is_pdf_extract(page_content: str) -> bool:
+    """page_content 是不是 pymupdf 抽取的 PDF 全文（靠 source_pdf: frontmatter 判定）。"""
+    return (
+        page_content.lstrip().startswith("---")
+        and "source_pdf:" in page_content[:800]
+    )
+
+
 def _build_prompt(
     page_path: str,
     page_content: str,
@@ -143,14 +158,10 @@ def _build_prompt(
     messages: list[dict],
     kb_slug: str,
     rel_path: str,
+    pdf_pages: tuple | None = None,  # (pages_rel, page_count, md_rel)：有则走"按需看图"模式
 ) -> str:
-    is_pdf_extract = (
-        page_content.lstrip().startswith("---")
-        and "source_pdf:" in page_content[:800]
-    )
-    max_chars = MAX_PDF_CHARS if is_pdf_extract else MAX_PAGE_CHARS
-    if len(page_content) > max_chars:
-        page_content = page_content[:max_chars] + "\n\n... (内容已截断)"
+    is_pdf_extract = _is_pdf_extract(page_content)
+    pdf_vision = is_pdf_extract and pdf_pages is not None
 
     parts = [
         "你是一个 AI 知识库助手，帮助用户浏览和编辑一个 Markdown 知识库。",
@@ -170,19 +181,41 @@ def _build_prompt(
     else:
         parts.append(f"\n## 当前页面路径\n\n{page_path or 'README.md'}")
 
-    if is_pdf_extract:
+    if pdf_vision:
+        pages_rel, page_count, md_rel = pdf_pages
+        index_excerpt = page_content[:MAX_PDF_INDEX_CHARS]
+        parts.append(
+            "\n## 阅读模式（PDF · 按需看图）\n\n"
+            f"用户正在读一篇学术论文 PDF（共 **{page_count} 页**）。为省上下文又保留图表/公式/版面，"
+            "**没把全文塞进来**，而是给你两样东西按需取：\n"
+            f"- **文字索引**：`{md_rel}`（pymupdf 抽取全文，按 `## Page N` 分页，可 Grep/Read 定位）。\n"
+            f"- **每页图片**：`{pages_rel}/pNNN.png`（三位补零，如 `{pages_rel}/p001.png`；含图表/公式/版面）。\n\n"
+            f"**以上路径都相对当前 cwd（`knowledge_bases/{kb_slug}/`），直接 Read/Grep 即可——别去 `wiki/papers/` 等别处找（那里是论文卡片，不是这篇 PDF），也别用 Bash 乱探目录。**\n\n"
+            "回答规则：\n"
+            f"1. 先用文字索引（Grep/Read `{md_rel}`）定位相关页，**再 `Read` 对应页的 PNG 看图**——问到图/表/公式/架构/具体数字时务必看页图，别只靠抽取文本（常有乱码错位）。\n"
+            "2. **严格基于该 PDF 作答**、引用标页码；不在论文里就明说「这不在这篇里」。\n"
+            "3. 用户选中的文字 = 他高亮的段落，**围绕它回答**。\n"
+            "4. 纯文字的简单问题可只用索引；**别把所有页图都读一遍**，只读需要的。\n"
+            "5. **只答问题、不改写任何文件**。\n\n"
+            f"### 文字索引开头（仅供快速定位，非全文）\n\n{index_excerpt}\n\n"
+            f"... (索引已截断；需要更多文字请 Read `{md_rel}`，需要看版面/图表请 Read 对应 `{pages_rel}/pNNN.png`)"
+        )
+    elif is_pdf_extract:
+        # 渲染不可用（缺 pymupdf / 渲染失败）→ 退回旧行为：塞抽取全文（截断）。
+        content = page_content
+        if len(content) > MAX_PDF_CHARS:
+            content = content[:MAX_PDF_CHARS] + "\n\n... (内容已截断)"
         parts.append(
             "\n## 阅读模式提示\n\n"
-            "当前页面是用户正在阅读的一篇 **学术论文 PDF 的自动抽取全文**（文件由 pymupdf 生成，页码以 `## Page N` 标记）。"
-            "回答规则：\n"
-            "1. **严格基于该 PDF 内容作答**，不臆测论文未写的细节；引用时标注页码。\n"
-            "2. 若问题不在 PDF 范围内，明确说「这不在这篇论文里」。\n"
-            "3. 用户选中的文字 = 他在 PDF 中高亮的段落——**围绕该段落回答**。\n"
-            "4. 抽取文本可能有断行、乱码、公式错位，结合上下文推断。\n"
-            "5. **不要改写任何文件**——PDF 阅读场景下一律只答问题。"
+            "当前页面是一篇学术论文 PDF 的自动抽取全文（pymupdf，页码 `## Page N`）。"
+            "严格基于内容作答、标注页码、不改写文件；抽取文本可能断行/乱码/公式错位，结合上下文推断。"
         )
-
-    parts.append(f"\n## 当前页面内容\n\n{page_content}")
+        parts.append(f"\n## 当前页面内容\n\n{content}")
+    else:
+        content = page_content
+        if len(content) > MAX_PAGE_CHARS:
+            content = content[:MAX_PAGE_CHARS] + "\n\n... (内容已截断)"
+        parts.append(f"\n## 当前页面内容\n\n{content}")
 
     if selected_text:
         parts.append(f"\n## 用户选中的文字\n\n{selected_text}")
@@ -279,6 +312,16 @@ class ClaudeCLIBackend:
         if not model:
             model = _default_model()
 
+        # PDF 按需视觉：是 PDF 抽取页就把每页懒渲染成 PNG（缓存 papers/.pages/<stem>/），
+        # 让模型按需 Read 看图，而不是把全文塞进 prompt。
+        pdf_pages = None
+        if page_content and rel_path and _is_pdf_extract(page_content):
+            stem = Path(rel_path).stem
+            pdf_abs = cwd / "papers" / f"{stem}.pdf"
+            count = pdf_render.ensure_pages(pdf_abs, cwd / "papers" / ".pages" / stem, PDF_RENDER_DPI)
+            if count:
+                pdf_pages = (f"papers/.pages/{stem}", count, f"papers/{stem}.md")
+
         resuming = bool(session_id)
         if resuming:
             last_msg = messages[-1]["content"] if messages else ""
@@ -286,8 +329,15 @@ class ClaudeCLIBackend:
                 prompt = f"用户选中了以下文字：\n\n{selected_text}\n\n用户的问题：{last_msg}"
             else:
                 prompt = last_msg
+            if pdf_pages:
+                prompt = (
+                    f"（当前在读 PDF：文字索引 `{pdf_pages[2]}`、每页图 `{pdf_pages[0]}/pNNN.png`，"
+                    "需要看图就 Read 对应页。）\n\n" + prompt
+                )
         else:
-            prompt = _build_prompt(page_path, page_content, selected_text, messages, kb_slug, rel_path)
+            prompt = _build_prompt(
+                page_path, page_content, selected_text, messages, kb_slug, rel_path, pdf_pages
+            )
 
         img_abs_paths, img_refs = _save_temp_images(cwd, images)
         if img_refs:
@@ -321,7 +371,10 @@ class ClaudeCLIBackend:
             env=_build_env(),
         )
 
+        timed_out = [False]
+
         def _kill_on_timeout():
+            timed_out[0] = True
             try:
                 proc.kill()
             except OSError:
@@ -435,7 +488,11 @@ class ClaudeCLIBackend:
             proc.wait(timeout=10)
             stderr_thread.join(timeout=5)
 
-            if proc.returncode != 0 and not got_text:
+            if timed_out[0]:
+                # 超时被 kill：无论是否已流过部分正文，都给一个明确的中断提示，
+                # 避免前端表现为"半句话静默结束"误以为正常完成。
+                yield {"type": "error", "content": f"对话超时（已运行超过 {int(_CLI_TIMEOUT)} 秒）被中断。"}
+            elif proc.returncode != 0 and not got_text:
                 detail = "".join(stderr_chunks).strip() or f"exit code {proc.returncode}"
                 logger.error("Claude CLI error: %s", detail)
                 if resuming:

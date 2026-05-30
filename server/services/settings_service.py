@@ -188,6 +188,9 @@ def public_view() -> dict[str, Any]:
     for profile in openai.get("models") or []:
         profile["configured"] = bool((profile.get("api_key") or "").strip())
         profile.pop("api_key", None)
+    # 注：claude_cli.cli_path 是本机路径，不脱敏——/api/settings 已由 SecurityMiddleware
+    # 保护（未设密码=仅本机；设了密码=需 cookie），不会暴露给网络上的匿名用户。脱敏它
+    # 反而会让设置页保存时把 cli_path 清空（write 合并的是 DEFAULTS，前端拿不到原值回填）。
     return {
         "backend": s["backend"],
         "access_password_set": bool((s.get("access_password") or "").strip()),

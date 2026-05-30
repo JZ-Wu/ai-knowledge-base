@@ -310,9 +310,11 @@ def iter_markdown_files(slug: str):
         if not path.is_file():
             continue
         rel_parts = path.relative_to(root).parts
-        if any(part.startswith(".") for part in rel_parts):
+        # 与 sync-content.mjs 的发布规则一致：跳过任一路径段以 '.' 或 '_'
+        # 开头的目录（如 _extracted/），以及文件名以 '_' 开头的 .md（如 _sidebar.md）。
+        if any(part.startswith((".", "_")) for part in rel_parts[:-1]):
             continue
-        if path.name == "_sidebar.md":
+        if path.name.startswith((".", "_")):
             continue
         yield path
 
@@ -358,12 +360,12 @@ def _tree_for_dir(slug: str, directory: Path, prefix: str = "") -> list[str]:
     root = kb_dir(slug)
     lines: list[str] = []
     children = sorted(
-        [p for p in directory.iterdir() if not p.name.startswith(".")],
+        # 跳过 . / _ 前缀的目录与文件，与 iter_markdown_files 的发布规则一致
+        # （否则 _extracted/、_sidebar.md 等不发布内容会进侧栏，点开即死链 + 计数口径不一致）。
+        [p for p in directory.iterdir() if not p.name.startswith((".", "_"))],
         key=lambda p: (not p.is_dir(), p.name.lower()),
     )
     for child in children:
-        if child.name == "_sidebar.md":
-            continue
         if child.is_dir():
             if any(p.suffix.lower() == ".md" for p in child.rglob("*.md")):
                 lines.append(f"{prefix}- {child.name}")

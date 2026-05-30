@@ -8,7 +8,7 @@ const page = await browser.newPage();
 page.on('pageerror', (e) => errors.push('ERR ' + e.message));
 page.on('requestfailed', (r) => errors.push('FAIL ' + r.url() + ' :: ' + (r.failure()?.errorText || '?')));
 await page.setViewport({ width: 1440, height: 900 });
-const url = 'http://localhost:4321/docs/tools/pdf-reader.html?pdf=idea-research/ideas/interactive-dt/papers/artgs.pdf&title=ArtGS%20%E2%80%94%E2%80%94%20per-instance%20%E5%85%B3%E8%8A%82';
+const url = 'http://localhost:4321/docs/tools/pdf-reader.html?pdf=kb/interactive-dt/papers/artgs.pdf&title=ArtGS%20%E2%80%94%E2%80%94%20per-instance%20%E5%85%B3%E8%8A%82';
 console.log('→', url);
 await page.goto(url, { waitUntil: 'networkidle0', timeout: 30000 });
 await new Promise(r => setTimeout(r, 2000));

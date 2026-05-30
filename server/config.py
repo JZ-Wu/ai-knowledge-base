@@ -25,6 +25,10 @@ DEFAULT_KB_SLUG = os.getenv("DEFAULT_KB_SLUG", "ai-ml-interview")
 MAX_PAGE_CHARS = 50000
 # PDF 全文抽取出来的页面通常更长，给它单独的更大阈值。
 MAX_PDF_CHARS = 200000
+# PDF 按需视觉：页面渲染成 PNG 的分辨率（dpi）。150 足够看清图表/公式且体积适中。
+PDF_RENDER_DPI = 150
+# PDF 阅读模式下，prompt 里给模型作"定位用"的抽取文本上限（不再灌全文，靠它 grep + 看页图）。
+MAX_PDF_INDEX_CHARS = 8000
 
 # ── EXTERNAL_MOUNTS：跨盘符 / KB 外目录静态挂载 ──
 #

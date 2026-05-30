@@ -74,7 +74,7 @@
       card.querySelector(".kb-card-name").textContent = kb.name;
       card.querySelector(".kb-card-meta").textContent =
         kb.slug + " · " + kb.files + " 篇 · " + (kb.chars / 10000).toFixed(1) + " 万字";
-      card.querySelector(".btn-open").href = "/#/kb/" + encodeURIComponent(kb.slug) + "/";
+      card.querySelector(".btn-open").href = "/kb/" + encodeURIComponent(kb.slug) + "/";
 
       card.querySelector(".kb-rename").addEventListener("click", function () {
         var nv = prompt("新的知识库名称：", kb.name);
@@ -227,7 +227,6 @@
 
     // OpenAI
     renderProfiles();
-    $("openai-enable-tools").checked = !!s.openai_api.enable_tools;
     $("openai-allow-client-model").checked = !!s.openai_api.allow_client_model;
 
     // 对话默认
@@ -344,7 +343,6 @@
         models: collectProfiles(),
         default_model_key: defaultModelSelect.value,
         allow_client_model: $("openai-allow-client-model").checked,
-        enable_tools: $("openai-enable-tools").checked,
         include_usage: state.settings.openai_api.include_usage,
         request_timeout: state.settings.openai_api.request_timeout,
         max_tool_rounds: state.settings.openai_api.max_tool_rounds,

@@ -84,6 +84,7 @@ const btnLabel = curKb ? curKb.label : siteName;
   </div>
   <span class="spacer"></span>
   <button class="mode-btn" id="mode-toggle" title="切换深色 (Ctrl+Shift+L)" aria-label="切换深色">🌙</button>
+  <script is:inline>(function(){var m=document.documentElement.getAttribute('data-mode');var b=document.getElementById('mode-toggle');if(b)b.textContent=(m==='dark'?'☀':'🌙');})();</script>
   <button class="top-action" id="edit-btn" title="编辑源 (Ctrl+Shift+E)">Edit<span class="kbd">⇧E</span></button>
   <button class="top-action primary" id="ai-open-btn" title="AI 助手 (Ctrl+Shift+A)">✦ AI<span class="kbd">⇧A</span></button>
 </header>

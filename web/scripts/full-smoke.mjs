@@ -34,7 +34,7 @@ const editOpen = await page.evaluate(() => document.getElementById('editor-panel
 console.log('  editor panel open:', editOpen);
 // navigate to a paper card
 console.log('→ Paper card (ArtGS)');
-await page.goto('http://localhost:4321/idea-research/ideas/interactive-dt/wiki/papers/artgs/', { waitUntil: 'networkidle0', timeout: 30000 });
+await page.goto('http://localhost:4321/kb/interactive-dt/wiki/papers/artgs/', { waitUntil: 'networkidle0', timeout: 30000 });
 await new Promise(r => setTimeout(r, 800));
 const sidebarActive = await page.evaluate(() => document.querySelector('.kb-nav a.active')?.textContent);
 console.log('  active sidebar item:', sidebarActive);

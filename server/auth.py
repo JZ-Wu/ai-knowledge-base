@@ -288,7 +288,22 @@ class SecurityMiddleware(BaseHTTPMiddleware):
                 )
 
         if not _token_material():
-            return await call_next(request)
+            # 未设访问密码：仅允许本机访问；外网一律拒绝。避免无密码实例暴露在公网时
+            # 被任意读写、甚至被远程抢先设密码。必须先在服务器本机设好密码再对外开放。
+            if _is_local(request):
+                return await call_next(request)
+            if normalized.startswith("/api/"):
+                return JSONResponse(
+                    {"detail": "Access password not set; remote access disabled. Set a password from localhost first."},
+                    status_code=403,
+                )
+            return HTMLResponse(
+                "<!DOCTYPE html><meta charset=utf-8><title>访问被禁用</title>"
+                "<div style='font-family:sans-serif;max-width:520px;margin:80px auto;text-align:center'>"
+                "<h1>访问被禁用</h1><p>本实例尚未设置访问密码，仅允许本机访问。"
+                "请在服务器本机的设置页设好访问密码后，再从外部访问。</p></div>",
+                status_code=403,
+            )
         if _is_local(request):
             return await call_next(request)
         if normalized in _OPEN_PATHS:

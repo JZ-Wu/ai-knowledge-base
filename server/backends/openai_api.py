@@ -213,9 +213,10 @@ def _stream_completion(messages, profile, tools, effort=""):
         "stream": True,
         "temperature": cfg.get("temperature", 0.2),
     }
-    # reasoning_effort 只对支持的推理模型有意义；用户显式选了才发，避免普通模型报错。
+    # reasoning_effort 只对推理模型有意义；非推理模型收到会 400（前端思考强度默认 medium 即触发）。
+    # 仅当该 model profile 显式标记 reasoning=True 时才注入（profile 没有该字段 → 默认 False = 不发）。
     # OpenAI 不收 "max"（那是 Claude CLI 的档位），降级到 high；其余直传。
-    if effort and effort != "default":
+    if profile.get("reasoning", False) and effort and effort != "default":
         payload["reasoning_effort"] = "high" if effort == "max" else effort
     if tools:
         payload["tools"] = _TOOLS

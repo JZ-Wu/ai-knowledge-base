@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from server.auth import SecurityMiddleware
@@ -14,6 +15,20 @@ app = FastAPI(
 
 # 单一安全中间件：路径防护 + 速率限制 + 认证（顺序敏感）。
 app.add_middleware(SecurityMiddleware)
+
+# CORS：让 Astro dev(:4321) 能跨源调 :8001 的 /api/*（带 cookie）。在 SecurityMiddleware
+# 之后注册 → CORS 处于更外层，OPTIONS 预检与被 SecurityMiddleware 拒绝的 401/403 也能带上
+# CORS 头，浏览器才不会把它们当成网络错误。生产同源(:8001)时无副作用。
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:4321", "http://127.0.0.1:4321",
+        "http://localhost:8001", "http://127.0.0.1:8001",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # API 路由
 app.include_router(settings.router, prefix="/api")  # 含 /api/login + /api/settings/*
