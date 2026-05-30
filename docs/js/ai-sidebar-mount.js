@@ -43,11 +43,17 @@
   }
   function applyServerModels(settings) {
     if (!settings) return;
-    // 思考强度默认值来自设置页 chat_defaults.effort（用户在 ai-sidebar.js 里改过则那边覆盖）
-    var cd = settings.chat_defaults || {};
-    if (cd.effort !== undefined) {
-      var think = document.getElementById("ai-think");
-      if (think) think.value = cd.effort;
+    // 思考强度（--effort / reasoning_effort）只有 Claude 后端确定支持；OpenAI 兼容后端
+    // 的普通模型不一定有推理能力（发了反而报错），所以非 Claude 后端隐藏整个思考下拉。
+    // AI_SIDEBAR_THINKING_SUPPORTED 供 ai-sidebar.js 决定要不要把 effort 发给后端。
+    var think = document.getElementById("ai-think");
+    var thinkingSupported = settings.backend === "claude_cli";
+    window.AI_SIDEBAR_THINKING_SUPPORTED = thinkingSupported;
+    if (think) {
+      think.style.display = thinkingSupported ? "" : "none";
+      // 默认值来自设置页 chat_defaults.effort（用户在 ai-sidebar.js 里改过则 localStorage 覆盖）
+      var cd = settings.chat_defaults || {};
+      if (thinkingSupported && cd.effort !== undefined) think.value = cd.effort;
     }
     var cfg = settings.backend === "openai_api" ? settings.openai_api : settings.claude_cli;
     var profiles = (cfg && cfg.models) || [];
@@ -193,7 +199,7 @@
     },
     {
       type: "js",
-      src: "/docs/js/ai-sidebar.js?v=13",
+      src: "/docs/js/ai-sidebar.js?v=14",
       check: function () { return !!window.__aiSidebarLoaded; },
     },
   ];

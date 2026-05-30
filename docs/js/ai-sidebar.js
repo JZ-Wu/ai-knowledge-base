@@ -415,6 +415,11 @@
   }
 
   function fetchChat(pagePath, messages, sid, images, selection) {
+    // 思考强度只在后端支持时才发——非 Claude 后端 #ai-think 已隐藏。
+    // AI_SIDEBAR_THINKING_SUPPORTED 由 ai-sidebar-mount.js 按 backend 设定；
+    // 未设（离线/未取到 settings）默认视为支持（内置兜底模型全是 Claude）。
+    var effortVal = (window.AI_SIDEBAR_THINKING_SUPPORTED !== false && thinkSelect)
+      ? thinkSelect.value : "";
     return fetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -423,8 +428,8 @@
         selected_text: selection || "",
         messages: messages,
         model: modelSelect ? modelSelect.value : DEFAULT_MODEL,
-        thinking: !!(thinkSelect && thinkSelect.value),
-        effort: thinkSelect ? thinkSelect.value : "",
+        thinking: !!effortVal,
+        effort: effortVal,
         images: images,
         session_id: sid,
       }),
