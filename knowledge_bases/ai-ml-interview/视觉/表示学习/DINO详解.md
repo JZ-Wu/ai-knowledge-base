@@ -706,6 +706,6 @@ Register token 充当"垃圾桶"，吸收全局信息的聚合需求，
 
 **相关文档**：
 - [对比学习与CLIP详解](对比学习与CLIP详解.md)
-- [VLM详解](../大模型/多模态/VLM详解.md)
+- [VLM详解](/kb/ai-ml-interview/大模型/多模态/VLM概述.md)
 
 [返回上级](README.md) | [返回总目录](../../README.md)

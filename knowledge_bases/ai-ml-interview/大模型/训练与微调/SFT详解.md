@@ -578,7 +578,7 @@ model = get_peft_model(model, lora_config)
 | **Parallel Adapter** | 将 Adapter 从串联改为并联（类似 LoRA 的位置） |
 | **Compacter** | 用 Kronecker 积参数化 Adapter，进一步压缩参数 |
 
-> **注意区分**：多模态（VLM）领域也常说 "adapter"，但那是指连接视觉编码器和 LLM 的 **跨模态桥接模块**（如 MLP 投影、Q-Former），目的是对齐不同模态的表示空间，和这里的 PEFT Adapter（层内瓶颈网络，目的是参数高效微调）是完全不同的概念。详见 [VLM详解](../多模态/VLM详解.md)。
+> **注意区分**：多模态（VLM）领域也常说 "adapter"，但那是指连接视觉编码器和 LLM 的 **跨模态桥接模块**（如 MLP 投影、Q-Former），目的是对齐不同模态的表示空间，和这里的 PEFT Adapter（层内瓶颈网络，目的是参数高效微调）是完全不同的概念。详见 [VLM详解](/kb/ai-ml-interview/大模型/多模态/VLM概述.md)。
 
 ---
 

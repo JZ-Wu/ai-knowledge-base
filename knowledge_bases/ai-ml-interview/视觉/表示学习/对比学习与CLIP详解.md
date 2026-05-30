@@ -302,12 +302,12 @@ LLaVA / Qwen-VL / InternVL 等 VLM 架构:
 
 为什么用 CLIP 而不是普通 ViT？因为 CLIP 的特征**天然与语言对齐**，更容易被 LLM 理解。
 
-> VLM 的详细内容参见 [VLM详解](../大模型/多模态/VLM详解.md)
+> VLM 的详细内容参见 [VLM详解](/kb/ai-ml-interview/大模型/多模态/VLM概述.md)
 
 ---
 
 **相关文档**：
 - [DINO详解](DINO详解.md)
-- [VLM详解](../大模型/多模态/VLM详解.md)
+- [VLM详解](/kb/ai-ml-interview/大模型/多模态/VLM概述.md)
 
 [返回上级](README.md) | [返回总目录](../../README.md)
