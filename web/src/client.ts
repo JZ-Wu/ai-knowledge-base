@@ -255,6 +255,9 @@ function wirePdfEmbeds() {
   if (!article) return;
   const iframe = article.querySelector('iframe.pdf-embed') as HTMLIFrameElement | null;
   if (!iframe) return;
+  // 允许内嵌阅读器请求全屏（其工具栏「全屏」按钮调 requestFullscreen，需父页 iframe 授权）
+  iframe.setAttribute('allow', 'fullscreen');
+  iframe.setAttribute('allowfullscreen', '');
   // 已经被包过就跳过
   if (iframe.parentElement?.classList.contains('pdf-embed-wrap')) return;
   // marked 可能把 iframe 套在 <p> 里，先 unwrap

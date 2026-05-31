@@ -281,3 +281,7 @@ html.pdf-embed body.ai-sidebar-open #pdf-viewer {
   body.ai-sidebar-open .pdf-toolbar,
   body.ai-sidebar-open #pdf-viewer { right: 0; }
 }
+
+/* 工具栏按钮按模式显隐：embed=内嵌 iframe，standalone=独立标签页 */
+html.pdf-embed .pdf-standalone-only { display: none; }
+html:not(.pdf-embed) .pdf-embed-only { display: none; }

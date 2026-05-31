@@ -69,6 +69,8 @@
     </div>
 
     <div class="pdf-actions">
+      <button class="pdf-btn pdf-embed-only" id="open-tab-btn" title="在新标签打开">↗ 新标签</button>
+      <button class="pdf-btn" id="fullscreen-btn" title="全屏">⛶ 全屏</button>
       <button class="pdf-btn pdf-standalone-only" id="back-btn" title="Back to KB">← 返回</button>
       <button class="pdf-btn primary" id="ai-open-btn" title="Ask AI (Ctrl+Shift+A)">AI 助手</button>
     </div>
@@ -131,6 +133,8 @@
     const zoomInBtn = document.getElementById("zoom-in");
     const zoomOutBtn = document.getElementById("zoom-out");
     const backBtn = document.getElementById("back-btn");
+    const fullscreenBtn = document.getElementById("fullscreen-btn");
+    const openTabBtn = document.getElementById("open-tab-btn");
     const aiOpenBtn = document.getElementById("ai-open-btn");
     const embedAskBtn = document.getElementById("pdf-embed-ask-btn");
 
@@ -359,6 +363,28 @@
     if (backBtn) {
       backBtn.addEventListener("click", () => {
         window.location.href = "/";
+      });
+    }
+
+    // 全屏：整个阅读器进入/退出全屏。内嵌时靠父页 iframe 的 allow="fullscreen"
+    // （client.ts 包 .pdf-embed-wrap 时已加）；standalone 是顶层页直接可用。
+    if (fullscreenBtn) {
+      const syncFsLabel = () => {
+        fullscreenBtn.textContent = document.fullscreenElement ? "⛶ 退出全屏" : "⛶ 全屏";
+      };
+      fullscreenBtn.addEventListener("click", () => {
+        if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+        else document.documentElement.requestFullscreen().catch(() => {});
+      });
+      document.addEventListener("fullscreenchange", syncFsLabel);
+    }
+
+    // 在新标签打开：去掉 embed=1 即为独立阅读页（仅内嵌模式显示，由 CSS .pdf-embed-only 控制）。
+    if (openTabBtn) {
+      openTabBtn.addEventListener("click", () => {
+        const u = new URL(window.location.href);
+        u.searchParams.delete("embed");
+        window.open(u.href, "_blank", "noopener");
       });
     }
 
