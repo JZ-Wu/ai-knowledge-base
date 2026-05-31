@@ -405,6 +405,13 @@
     }
   });
 
+  // 输入框随内容自动增高（上限由 CSS max-height 兜住；用户也可手动上下拖拽 resize 调整）。
+  function autoGrowInput() {
+    inputEl.style.height = "auto";
+    inputEl.style.height = inputEl.scrollHeight + "px";
+  }
+  inputEl.addEventListener("input", autoGrowInput);
+
   function setStreamingUI(streaming) {
     isStreaming = streaming;
     if (streaming) {
@@ -544,6 +551,7 @@
     imagePreview.innerHTML = "";
 
     inputEl.value = "";
+    inputEl.style.height = "";  // 发送后回到默认高度
     filesEdited = false;
 
     // 选中文本只在"本次"消息生效——发送时随这条消息带上，发送完即清。

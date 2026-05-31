@@ -426,7 +426,10 @@ body.ai-sidebar-open .content {
   border-radius: 8px;
   padding: 8px 12px;
   font-size: 14px;
-  resize: none;
+  resize: vertical;          /* 允许用户上下拖拽调高 */
+  min-height: 44px;
+  max-height: 45vh;
+  overflow-y: auto;
   font-family: inherit;
   outline: none;
   box-sizing: border-box;
