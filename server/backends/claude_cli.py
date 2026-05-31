@@ -31,7 +31,7 @@ from server.config import (
     MAX_PDF_INDEX_CHARS,
     PDF_RENDER_DPI,
 )
-from server.services import kb_service, pdf_render, settings_service
+from server.services import kb_service, pdf_render, quota_check, settings_service
 
 logger = logging.getLogger(__name__)
 if not logging.getLogger().handlers:
@@ -277,11 +277,20 @@ class ClaudeCLIBackend:
 
     def status(self) -> dict[str, Any]:
         cli_path = settings_service.claude_cli_path()
-        return {
+        result: dict[str, Any] = {
             "backend": self.name,
             "cli_path": cli_path,
             "available": bool(cli_path),
         }
+        # 合并实时 5h/7d 用量百分比：带订阅 OAuth token 调一次 Anthropic API、读限流响应头
+        # （CLI 的 stream-json 不给百分比）。失败/无凭据静默跳过，只缺百分比不影响其它字段。
+        try:
+            q = quota_check.check_quota()
+            if isinstance(q, dict) and not q.get("error"):
+                result.update(q)  # 加上 status / five_hour / seven_day
+        except Exception:
+            pass
+        return result
 
     def stream_chat(
         self,
