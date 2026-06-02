@@ -3,7 +3,8 @@
 ## 环境要求
 
 - Python 3.11+
-- （推荐）Node.js 18+ 和 [Claude CLI](https://docs.anthropic.com/en/docs/claude-code) —— 用 Claude 订阅，无需 API Key
+- Node.js 18+（用于 Astro 前端）
+- （推荐）[Claude CLI](https://docs.anthropic.com/en/docs/claude-code) —— 用 Claude 订阅，无需 API Key
 - 或者：任意 OpenAI 兼容 API 的 API Key（OpenAI / DeepSeek 等）
 
 ## 安装步骤
@@ -20,11 +21,55 @@ cd ai-knowledge-base
 # 3. 装 Python 依赖
 pip install -r server/requirements.txt
 
-# 4. 启动
+# 4. 装前端依赖
+cd web
+npm install
+cd ..
+```
+
+## 启动方式
+
+### 开发模式（推荐改代码时使用）
+
+开两个终端：
+
+```bash
+# 终端 1：FastAPI 后端 API
+python run.py
+
+# 终端 2：Astro 前端
+cd web
+npm run dev
+```
+
+浏览器打开 http://localhost:4321/。
+
+开发模式下：
+
+- `4321` 是 Astro 前端。
+- `8001` 是 FastAPI 后端 API。
+- 前端会直接调用 `http://localhost:8001/api/*`；后端已配置 CORS。
+- 不要用 `http://localhost:8001/` 看页面，除非你已经执行过生产构建。
+
+### 生产 / 单端口模式
+
+先构建前端：
+
+```bash
+cd web
+npm run build
+cd ..
+```
+
+构建完成后会生成 `web/dist/index.html`。然后启动后端：
+
+```bash
 python run.py
 ```
 
-浏览器打开 http://localhost:8000 即可。
+浏览器打开 http://localhost:8001/。
+
+`server/main.py` 会自动检测 `web/dist`：存在则挂载 Astro 构建产物，不存在则无法在 `8001 /` 提供新版前端首页。
 
 ### 启动参数
 
@@ -38,7 +83,9 @@ python run.py --reload           # 开发模式，代码修改自动重启
 1. 服务起来后会自动探测 `claude` 命令是否可用：
    - 可用 → backend 默认为 `claude_cli`，**直接能用**，不用碰任何配置
    - 不可用 → backend 默认为 `openai_api`，但 API key 为空，顶部会弹横幅
-2. 点横幅或访问 `http://localhost:8000/docs/tools/settings.html` 进入设置页
+2. 点横幅或访问设置页：
+   - 开发模式：`http://localhost:4321/docs/tools/settings.html`
+   - 生产模式：`http://localhost:8001/docs/tools/settings.html`
 3. 选 backend、填 API key / 改默认模型、（可选）设访问密码 → 保存
 4. 回到首页即可使用
 
@@ -48,8 +95,14 @@ python run.py --reload           # 开发模式，代码修改自动重启
 
 ```
 ai-knowledge-base/
-├── index.html                  # Docsify 入口 + AI 侧边栏 + 编辑器 + KB 按钮
 ├── run.py                      # 启动脚本
+├── web/                        # Astro 前端
+│   ├── src/                    # 页面、布局、组件、全局样式
+│   ├── public/                 # 静态资源；npm run sync/build 时会镜像 docs/
+│   ├── scripts/
+│   │   └── sync-content.mjs    # 把 knowledge_bases/ 同步到 Astro content collection
+│   ├── astro.config.mjs
+│   └── package.json
 ├── server/
 │   ├── main.py                 # FastAPI 应用，挂中间件 + 路由
 │   ├── auth.py                 # 安全中间件：路径防护 + 速率限制 + 密码认证
@@ -70,12 +123,12 @@ ai-knowledge-base/
 │       ├── claude_cli.py       # Claude CLI 子进程实现
 │       └── openai_api.py       # OpenAI 兼容 API 实现（带服务器侧工具调用）
 ├── docs/
-│   ├── js/                     # ai-sidebar / editor / kb-manager / settings 前端
+│   ├── js/                     # ai-sidebar / editor / settings 前端
 │   ├── css/                    # 样式
 │   ├── tools/
 │   │   ├── pdf-reader.html     # PDF 阅读器
 │   │   └── settings.html       # 设置页
-│   └── vendor/                 # Docsify / KaTeX / CodeMirror / PDF.js 本地资源
+│   └── vendor/                 # KaTeX / CodeMirror / PDF.js 等本地资源
 ├── knowledge_bases/            # 多知识库内容目录
 │   └── ai-ml-interview/
 │       ├── .kb/meta.json       # KB 元数据（名称、时间戳）
@@ -87,15 +140,18 @@ ai-knowledge-base/
 ## 架构
 
 ```
-浏览器 (localhost:8000)
-  ├── Docsify 渲染 /kb/<slug>/<path>.md
+浏览器
+  ├── 开发模式: http://localhost:4321/  (Astro dev)
+  ├── 生产模式: http://localhost:8001/  (FastAPI serve web/dist)
+  ├── Astro 渲染 /kb/<slug>/<path> 页面
   ├── AI 侧边栏（选中 → 对话 → 编辑文件）
-  ├── KB 按钮 → 浮窗管理面板（新建/改名/删/上传 KB）
+  ├── KB 顶栏入口 → 设置页管理 KB（新建/改名/删/上传 KB）
   ├── 编辑器（CodeMirror，Ctrl+Shift+E）
   └── fetch → /api/*
 
-FastAPI 后端（同一端口）
+FastAPI 后端（默认 8001）
   ├── 中间件 SecurityMiddleware：路径防护 + 速率限制 + ACCESS_PASSWORD 认证
+  ├── CORS：允许 Astro dev(:4321) 调 /api/*
   ├── /api/settings        GET/PUT 运行时设置（脱敏后暴露给前端）
   ├── /api/settings/check  GET     未登录也能访问，用于首次启动检测
   ├── /api/login           POST    登录
@@ -108,7 +164,7 @@ FastAPI 后端（同一端口）
   ├── /api/models          GET     当前 backend 的模型列表
   ├── /_sidebar.md         GET     动态生成 Docsify sidebar
   ├── /kb/<slug>/...       GET     静态文件（限制在该 KB 目录内）
-  └── /*                   静态资源（docs/ 下，catch-all）
+  └── /*                   生产模式静态资源（web/dist，catch-all）
 ```
 
 ### Backend 切换
@@ -136,7 +192,7 @@ class Backend(Protocol):
 1. Fork 或 clone 本项目
 2. KB 按钮 → 新建一个空知识库（或保留 `ai-ml-interview` 当 demo）
 3. 拖文件夹到 KB Manager 上传
-4. `python run.py` 启动即可
+4. 开发模式用 `python run.py` + `cd web && npm run dev`；生产模式先 `cd web && npm run build` 再 `python run.py`
 
 如果想清空内置的 `ai-ml-interview` 改成自己的：直接在 KB 管理面板点"删"，整个目录会被搬到 `_trash/`（gitignored，不会推到远端）。
 
@@ -153,5 +209,6 @@ class Backend(Protocol):
 ## 部署给别人用
 
 1. 设访问密码：设置页底部填密码 → 保存。本机访问仍直通，外网访问会跳登录页。
-2. 反向代理（nginx 等）走 8000 端口即可，**不要**把 `/server/`、`/knowledge_bases/`、`/_trash/`、`/_backup/` 暴露给外网（中间件已经拦了，但反向代理层也建议加白名单）。
-3. 不要把 `server/.settings.json` 和 `server/.auth_secret` 推到 git（已在 `.gitignore`）。
+2. 先在 `web/` 执行 `npm run build`，再启动 `python run.py`。
+3. 反向代理（nginx 等）走 8001 端口即可，**不要**把 `/server/`、`/knowledge_bases/`、`/_trash/`、`/_backup/` 暴露给外网（中间件已经拦了，但反向代理层也建议加白名单）。
+4. 不要把 `server/.settings.json` 和 `server/.auth_secret` 推到 git（已在 `.gitignore`）。

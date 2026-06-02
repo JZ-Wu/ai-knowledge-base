@@ -1,49 +1,72 @@
-# Starlight Starter Kit: Basics
+# Web Frontend
 
-[![Built with Starlight](https://astro.badg.es/v2/built-with-starlight/tiny.svg)](https://starlight.astro.build)
+这是 AI 知识库的 Astro 前端。FastAPI 后端仍在项目根目录的 `server/`，默认端口 `8001`；前端开发服务器默认端口 `4321`。
 
+## 开发模式
+
+从项目根目录开两个终端：
+
+```bash
+# 终端 1：后端 API
+python run.py
+
+# 终端 2：前端
+cd web
+npm install
+npm run dev
 ```
-npm create astro@latest -- --template starlight
+
+访问：
+
+```text
+http://localhost:4321/
 ```
 
-> 🧑‍🚀 **Seasoned astronaut?** Delete this file. Have fun!
+开发模式下，前端会调用 `http://localhost:8001/api/*`。后端已经配置 CORS 允许 `localhost:4321`。
 
-## 🚀 Project Structure
+## 生产构建
 
-Inside of your Astro + Starlight project, you'll see the following folders and files:
-
+```bash
+cd web
+npm install
+npm run build
+cd ..
+python run.py
 ```
-.
-├── public/
+
+访问：
+
+```text
+http://localhost:8001/
+```
+
+`npm run build` 会先执行 `scripts/sync-content.mjs`，把 `knowledge_bases/` 同步到 `web/src/content/docs/`，并把根目录 `docs/` 镜像到 `web/public/docs/`。构建完成后生成 `web/dist/`，FastAPI 会自动挂载它作为单端口前端。
+
+如果 `http://localhost:8001/` 返回 404，通常是因为还没有生成 `web/dist/index.html`。
+
+## 常用命令
+
+| Command | Action |
+| --- | --- |
+| `npm install` | 安装前端依赖 |
+| `npm run sync` | 同步知识库内容和公共静态资源 |
+| `npm run dev` | 同步内容后启动 Astro dev server |
+| `npm run build` | 同步内容并构建到 `web/dist/` |
+| `npm run preview` | 预览已构建的前端产物 |
+
+## 目录
+
+```text
+web/
 ├── src/
-│   ├── assets/
-│   ├── content/
-│   │   └── docs/
-│   └── content.config.ts
+│   ├── pages/          # Astro 页面
+│   ├── layouts/        # 页面布局
+│   ├── components/     # Topbar / Sidebar / TOC 等组件
+│   ├── styles/         # 全局样式
+│   └── content/        # sync-content 生成的知识库内容
+├── public/             # sync-content 镜像的 docs/ 静态资源
+├── scripts/
+│   └── sync-content.mjs
 ├── astro.config.mjs
-├── package.json
-└── tsconfig.json
+└── package.json
 ```
-
-Starlight looks for `.md` or `.mdx` files in the `src/content/docs/` directory. Each file is exposed as a route based on its file name.
-
-Images can be added to `src/assets/` and embedded in Markdown with a relative link.
-
-Static assets, like favicons, can be placed in the `public/` directory.
-
-## 🧞 Commands
-
-All commands are run from the root of the project, from a terminal:
-
-| Command                   | Action                                           |
-| :------------------------ | :----------------------------------------------- |
-| `npm install`             | Installs dependencies                            |
-| `npm run dev`             | Starts local dev server at `localhost:4321`      |
-| `npm run build`           | Build your production site to `./dist/`          |
-| `npm run preview`         | Preview your build locally, before deploying     |
-| `npm run astro ...`       | Run CLI commands like `astro add`, `astro check` |
-| `npm run astro -- --help` | Get help using the Astro CLI                     |
-
-## 👀 Want to learn more?
-
-Check out [Starlight’s docs](https://starlight.astro.build/), read [the Astro documentation](https://docs.astro.build), or jump into the [Astro Discord server](https://astro.build/chat).

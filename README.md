@@ -12,8 +12,17 @@
 git clone https://github.com/JZ-Wu/ai-knowledge-base
 cd ai-knowledge-base
 pip install -r server/requirements.txt
+cd web && npm install && npm run build
+cd ..
 python run.py            # http://localhost:8001
 ```
+
+`python run.py` 只启动 FastAPI 后端。新版前端是 `web/` 里的 Astro 应用：
+
+- **开发模式**：开两个终端，后端跑 `python run.py`，前端跑 `cd web && npm run dev`，访问 `http://localhost:4321/`。
+- **生产 / 单端口模式**：先 `cd web && npm run build` 生成 `web/dist`，再 `python run.py`，访问 `http://localhost:8001/`。
+
+如果直接访问 `http://localhost:8001/` 返回 404，通常是因为还没有构建出 `web/dist/index.html`。
 
 启动时自动探测 `claude` 命令是否在 PATH 上：
 
@@ -108,7 +117,11 @@ knowledge_bases/
 
 ```
 ai-knowledge-base/
-├── index.html                 Docsify 入口 + AI 侧边栏 + 顶栏按钮
+├── web/                       Astro 前端（开发端口 4321；build 输出 web/dist）
+│   ├── src/                   页面、布局、组件、样式
+│   ├── public/                构建时同步的 docs/ 静态资源
+│   ├── scripts/sync-content.mjs  同步 KB 内容到 Astro content collection
+│   └── package.json
 ├── server/
 │   ├── main.py                FastAPI app
 │   ├── auth.py                SecurityMiddleware（路径白名单 + 限速 + scrypt 登录）
@@ -134,7 +147,7 @@ ai-knowledge-base/
 
 ## 技术栈
 
-Docsify · FastAPI · Claude CLI / OpenAI 兼容 API · CodeMirror 5 · KaTeX · PDF.js · Python stdlib scrypt
+Astro · FastAPI · Claude CLI / OpenAI 兼容 API · CodeMirror 5 · KaTeX · PDF.js · Python stdlib scrypt
 
 ## License
 
