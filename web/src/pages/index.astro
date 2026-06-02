@@ -36,6 +36,8 @@ const all = await getCollection('docs');
 const kbEntries = all.filter((e) => e.id.startsWith('kb/'));
 const byId = new Map(all.map((e) => [e.id, e]));
 const charCount = (s: string) => (s || '').replace(/\s/g, '').length;
+const groupNum = (n: number) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+const fmtChars = (n: number) => (n >= 10000 ? (n / 10000).toFixed(1).replace(/\.0$/, '') + ' 万字' : groupNum(n) + ' 字');
 
 // 顶部统计
 const totalDocs = kbEntries.length;
@@ -95,9 +97,11 @@ for (const slug of discovered) {
 }
 
 const topics = KBS.filter((kb) => discovered.includes(kb.slug)).map((kb) => {
-  const count = kbEntries.filter((e) => e.id === `kb/${kb.slug}/index` || e.id.startsWith(`kb/${kb.slug}/`)).length;
+  const entries = kbEntries.filter((e) => e.id === `kb/${kb.slug}/index` || e.id.startsWith(`kb/${kb.slug}/`));
+  const count = entries.length;
+  const chars = entries.reduce((a, e) => a + charCount((e as any).body || ''), 0);
   const ct = parseInt(git(`log -1 --pretty=format:%ct -- knowledge_bases/${kb.slug}`).trim() || '0', 10);
-  return { ...kb, href: `/kb/${kb.slug}/`, count, updated: ago(ct ? ct * 1000 : 0) };
+  return { ...kb, href: `/kb/${kb.slug}/`, count, charsLabel: fmtChars(chars), updated: ago(ct ? ct * 1000 : 0) };
 });
 
 // 最近更新（git，最多 6 条；失败则为空，区块自动隐藏）
@@ -171,6 +175,8 @@ const recent: { tag: string; title: string; href: string; time: string }[] = [];
           <div class="topic-desc">{t.desc}</div>
           <div class="topic-meta">
             <span>{t.count} {t.unit}</span>
+            <span class="dot">·</span>
+            <span>{t.charsLabel}</span>
             {t.updated && <span class="dot">·</span>}
             {t.updated && <span>更新 {t.updated}</span>}
             <span class="dot">·</span>
