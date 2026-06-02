@@ -42,6 +42,8 @@ web/screenshots/
 
 # Claude Code
 .claude/skills/idea-research-skill/
+# 本机权限配置——每台机器各管各的，不入 git
+.claude/settings.local.json
 
 # OS
 .DS_Store

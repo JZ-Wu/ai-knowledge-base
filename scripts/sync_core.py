@@ -36,6 +36,7 @@ SYNC_PATHS = [
     "INSTALL.md",
     "scripts/sync_core.py",  # 同步脚本自身：以后改 SYNC_PATHS 可自动传播到各 KB
     "scripts/extract_pdf.py",  # PDF 全文抽取（多 KB：遍历 knowledge_bases/<slug>/papers/*.pdf）
+    ".gitattributes",  # 行尾归一化（LF）：三库共用一份，避免被同步文件 phantom-modified 抖动
     # ── Astro 前端（只同步源；构建产物 dist/.astro/node_modules/content-docs 各 KB 本地再生）──
     # 用细粒度 src 子路径，刻意避开生成的 web/src/content/docs。
     "web/src/components",

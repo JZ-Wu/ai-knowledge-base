@@ -1,0 +1,24 @@
+# 行尾归一化 —— 三库一致性的根。
+# kb-core 框架文件经 scripts/sync_core.py（shutil.copy2 字节拷贝）镜像进
+# 私人库 / 公开库；若各库 EOL 不一致，被同步文件会永远显示 phantom-modified。
+# 统一让 git 把所有文本文件的 blob 归一化为 LF（仓库内 LF，跨库拷贝零抖动）。
+* text=auto
+
+# Windows 批处理脚本必须 CRLF，否则可能无法执行
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# 二进制资源 —— 永不做 EOL 转换
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.webp binary
+*.ico  binary
+*.svg  text
+*.pdf  binary
+*.woff  binary
+*.woff2 binary
+*.ttf  binary
+*.eot  binary
+*.zip  binary
